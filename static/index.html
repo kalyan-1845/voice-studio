@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Voice Studio | AI Voice Cloning & Studio Voiceover</title>
+  <title>Voice Studio | Telugu, Hindi & English AI Voice Suite</title>
   <!-- Google Fonts: Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -25,14 +25,42 @@
         </div>
         <div class="brand-text">
           <h1>Voice<span class="gradient-text">Studio</span></h1>
-          <p class="brand-subtitle">AI Zero-Shot Voice Clone & Neural Speech</p>
+          <p class="brand-subtitle">Multilingual AI Voice Suite • Telugu, Hindi & English</p>
         </div>
       </div>
-      <div class="header-status">
-        <span class="status-indicator"></span>
-        <span class="status-text">Cloud Engine Active (0% PC RAM Used)</span>
+      
+      <div class="header-right">
+        <button class="btn btn-sm btn-outline" onclick="toggleTokenModal()">
+          🔑 <span id="token-status-text">Cloud Token</span>
+        </button>
+        <div class="header-status">
+          <span class="status-indicator"></span>
+          <span class="status-text">0% PC RAM Used</span>
+        </div>
       </div>
     </header>
+
+    <!-- Token Settings Modal -->
+    <div id="token-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Hugging Face ZeroGPU Free Token</h3>
+          <button class="modal-close" onclick="toggleTokenModal()">&times;</button>
+        </div>
+        <p class="modal-desc">
+          To get unlimited cloud GPU runs without public rate limits, paste your free access token from 
+          <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>.
+        </p>
+        <div class="form-group">
+          <label for="hf-token-input">Your Access Token (hf_...)</label>
+          <input type="password" id="hf-token-input" class="input-text" placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxx">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="toggleTokenModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveHfToken()">Save Token</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Main Workspace -->
     <main class="studio-workspace">
@@ -60,7 +88,7 @@
               <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
             </svg>
-            Studio Neural
+            Indian Studio Neural
           </button>
         </div>
 
@@ -76,8 +104,8 @@
                   <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
               </div>
-              <p class="dropzone-title">Drop new voice sample here</p>
-              <p class="dropzone-hint">WAV, MP3, M4A, or FLAC (Max 25MB)</p>
+              <p class="dropzone-title">Upload your 15s–60s clear voice sample</p>
+              <p class="dropzone-hint">WAV, MP3, M4A, or FLAC</p>
               <div class="button-row">
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('audio-input').click()">
                   Browse File
@@ -115,36 +143,40 @@
               <label>Saved Voice Profiles</label>
               <button class="btn btn-sm btn-ghost" onclick="loadSamples()">Refresh</button>
             </div>
-            <div id="samples-list" class="samples-list">
-              <!-- Rendered dynamically via JS -->
-            </div>
+            <div id="samples-list" class="samples-list"></div>
           </div>
 
-          <!-- Transcript Reference (Optional) -->
+          <!-- Transcript Reference (Crucial to avoid grandma/robotic distortions) -->
           <div class="form-group" style="margin-top: 1rem;">
             <label for="sample-transcript">
-              Voice Sample Transcript <span class="label-opt">(Optional - Improves pronunciation)</span>
+              Reference Audio Transcript <span class="label-opt">(Prevents distorted/unnatural artifacts)</span>
             </label>
-            <textarea id="sample-transcript" class="input-text" rows="2" placeholder="What words did you speak in your voice sample? (e.g. 'Hello, this is my voice recording.')"></textarea>
+            <textarea id="sample-transcript" class="input-text" rows="2" placeholder="Type the words you spoke in your voice recording sample..."></textarea>
           </div>
         </div>
 
         <!-- Neural Voice Section -->
         <div id="neural-section" class="mode-content hidden">
           <div class="form-group">
-            <label for="neural-voice-select">Choose High-Def Studio Voice</label>
+            <label for="neural-voice-select">Native Studio Voice (Zero Queue • Studio Quality)</label>
             <select id="neural-voice-select" class="input-select">
-              <option value="hi-IN-MadhurNeural">Madhur (Hindi Male - Natural & Fluent)</option>
-              <option value="hi-IN-SwaraNeural">Swara (Hindi Female - Expressive)</option>
-              <option value="en-IN-PrabhatNeural">Prabhat (Indian English Male - Fluent)</option>
-              <option value="en-IN-NeerjaNeural">Neerja (Indian English Female - Expressive)</option>
-              <option value="en-US-ChristopherNeural">Christopher (US Male - Warm & Studio)</option>
-              <option value="en-US-JennyNeural">Jenny (US Female - Natural & Clear)</option>
-              <option value="en-US-GuyNeural">Guy (US Male - Casual)</option>
-              <option value="en-US-AriaNeural">Aria (US Female - Expressive)</option>
-              <option value="en-GB-RyanNeural">Ryan (British Male - Articulate)</option>
-              <option value="en-GB-SoniaNeural">Sonia (British Female - Calm)</option>
-              <option value="en-AU-WilliamNeural">William (Australian Male)</option>
+              <optgroup label="Telugu (తెలుగు)">
+                <option value="te-IN-MohanNeural" selected>Mohan (Telugu Male - Natural & Deep)</option>
+                <option value="te-IN-ShrutiNeural">Shruti (Telugu Female - Expressive)</option>
+              </optgroup>
+              <optgroup label="Hindi (हिंदी)">
+                <option value="hi-IN-MadhurNeural">Madhur (Hindi Male - Fluent & Natural)</option>
+                <option value="hi-IN-SwaraNeural">Swara (Hindi Female - Expressive)</option>
+              </optgroup>
+              <optgroup label="Indian English">
+                <option value="en-IN-PrabhatNeural">Prabhat (Indian English Male)</option>
+                <option value="en-IN-NeerjaNeural">Neerja (Indian English Female)</option>
+              </optgroup>
+              <optgroup label="Global English">
+                <option value="en-US-ChristopherNeural">Christopher (US Male - Warm Studio)</option>
+                <option value="en-US-JennyNeural">Jenny (US Female - Clear)</option>
+                <option value="en-GB-RyanNeural">Ryan (British Male - Articulate)</option>
+              </optgroup>
             </select>
           </div>
           <div class="info-box">
@@ -153,7 +185,7 @@
               <line x1="12" y1="16" x2="12" y2="12"></line>
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
-            <span>Studio neural voices generate instantly with zero wait times and zero queue. Full support for Hindi and English.</span>
+            <span>Indian Studio voices synthesize in 1 second with 0 quota limits and native pronunciation for Telugu, Hindi, and English.</span>
           </div>
         </div>
       </section>
@@ -165,14 +197,13 @@
           <h2>Script & Generation</h2>
         </div>
 
-        <!-- Quick Template Chips -->
+        <!-- Language Quick Preset Chips -->
         <div class="chip-container">
           <span class="chip-label">Quick Presets:</span>
-          <button class="chip" onclick="applyPreset('intro')">YouTube Intro</button>
-          <button class="chip" onclick="applyPreset('hindi')">Hindi Intro</button>
+          <button class="chip" onclick="applyPreset('telugu')">తెలుగు (Telugu)</button>
+          <button class="chip" onclick="applyPreset('hindi')">हिंदी (Hindi)</button>
+          <button class="chip" onclick="applyPreset('intro')">English Intro</button>
           <button class="chip" onclick="applyPreset('tutorial')">Tutorial</button>
-          <button class="chip" onclick="applyPreset('podcast')">Podcast Clip</button>
-          <button class="chip" onclick="applyPreset('commercial')">Promo Ad</button>
         </div>
 
         <!-- Script Area -->
@@ -181,10 +212,10 @@
             <label for="script-text">Voiceover Script</label>
             <span class="char-count" id="script-counter">0 words | ~0s</span>
           </div>
-          <textarea id="script-text" class="script-textarea" rows="7" placeholder="Type or paste the exact script you want to produce in your cloned voice..."></textarea>
+          <textarea id="script-text" class="script-textarea" rows="7" placeholder="రాయండి లేదా కాపీ చేయండి... (Type in Telugu, Hindi, or English)"></textarea>
         </div>
 
-        <!-- Audio Settings -->
+        <!-- Audio Settings: Speed, Pitch, Silence -->
         <div class="settings-grid">
           <div class="setting-item">
             <div class="label-row">
@@ -193,9 +224,13 @@
             </div>
             <input type="range" id="speed-slider" min="0.7" max="1.5" step="0.05" value="1.0" class="slider" oninput="updateSpeedVal(this.value)">
           </div>
-          <div class="setting-item toggle-item">
-            <label for="remove-silence-chk">Auto Silence Trimmer</label>
-            <input type="checkbox" id="remove-silence-chk" checked class="checkbox-toggle">
+
+          <div class="setting-item">
+            <div class="label-row">
+              <label for="pitch-slider">Pitch Offset (Tone)</label>
+              <span id="pitch-val">+0 Hz</span>
+            </div>
+            <input type="range" id="pitch-slider" min="-30" max="30" step="2" value="0" class="slider" oninput="updatePitchVal(this.value)">
           </div>
         </div>
 

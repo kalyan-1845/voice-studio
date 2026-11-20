@@ -5,18 +5,19 @@ let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 
-// Presets
+// Multilingual Presets (Telugu, Hindi, English)
 const SCRIPT_PRESETS = {
-  intro: "Hey everyone, welcome back to the channel! Today we're diving into something really exciting that you won't want to miss. Make sure to hit subscribe and let's jump right in.",
-  hindi: "नमस्ते! मेरा नाम कल्याण है। Voice Studio में आपका स्वागत है। यह आवाज़ पूरी तरह से AI और Cloud द्वारा क्लोन की गई है।",
+  telugu: "నమస్కారం! నా పేరు కళ్యాణ్. వాయిస్ స్టూడియోకి స్వాగతం. ఈ ఆడియో తెలుగు భాషలో చాలా సహజంగా, స్పష్టంగా వినిపిస్తుంది.",
+  hindi: "नमस्ते! मेरा नाम कल्याण है। Voice Studio में आपका स्वागत है। यह आवाज़ पूरी तरह से प्राकृतिक और साफ़ सुनाई देती है।",
+  intro: "Welcome to today's episode. We have a lot of ground to cover, from emerging technologies to real-world lessons you can apply right away.",
   tutorial: "In this step-by-step guide, I'll walk you through the entire process from start to finish. Follow along closely, and you'll have this working in less than five minutes.",
-  podcast: "Welcome to today's episode. We have a lot of ground to cover, from emerging technologies to real-world lessons you can apply right away.",
   commercial: "Looking to take your workflow to the next level? Discover how effortless creation can be with next-generation tools designed for creators like you."
 };
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  checkTokenStatus();
   loadSamples();
   loadHistory();
   updateWordCount();
@@ -51,8 +52,53 @@ function setupEventListeners() {
     }
   });
 
-  // Script text counter
   scriptArea.addEventListener('input', updateWordCount);
+}
+
+// Token Management
+async function checkTokenStatus() {
+  try {
+    const res = await fetch('/api/token');
+    const data = await res.json();
+    const btnText = document.getElementById('token-status-text');
+    if (data.has_token) {
+      btnText.innerText = `Token Connected (${data.masked_token})`;
+    } else {
+      btnText.innerText = 'Add Free HF Token';
+    }
+  } catch (err) {
+    console.error('Failed to check token:', err);
+  }
+}
+
+function toggleTokenModal() {
+  const modal = document.getElementById('token-modal');
+  modal.classList.toggle('hidden');
+}
+
+async function saveHfToken() {
+  const token = document.getElementById('hf-token-input').value.trim();
+  if (!token) {
+    showStatus('Please enter a valid token.', 'warning');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toggleTokenModal();
+      checkTokenStatus();
+      showStatus('Hugging Face Token saved successfully! ZeroGPU quota unlocked.', 'info');
+      setTimeout(hideStatus, 4000);
+    }
+  } catch (err) {
+    showStatus(`Failed to save token: ${err.message}`, 'error');
+  }
 }
 
 // Mode Switcher
@@ -69,11 +115,11 @@ function switchMode(mode) {
 function updateWordCount() {
   const text = document.getElementById('script-text').value.trim();
   const words = text ? text.split(/\s+/).length : 0;
-  const estSeconds = Math.round((words / 140) * 60);
+  const estSeconds = Math.round((words / 130) * 60);
   document.getElementById('script-counter').innerText = `${words} words | ~${estSeconds}s`;
 }
 
-// Quick Presets
+// Presets
 function applyPreset(key) {
   if (SCRIPT_PRESETS[key]) {
     document.getElementById('script-text').value = SCRIPT_PRESETS[key];
@@ -85,6 +131,11 @@ function updateSpeedVal(val) {
   document.getElementById('speed-val').innerText = `${parseFloat(val).toFixed(2)}x`;
 }
 
+function updatePitchVal(val) {
+  const num = parseInt(val, 10);
+  document.getElementById('pitch-val').innerText = `${num >= 0 ? '+' : ''}${num} Hz`;
+}
+
 // Load and Display Saved Voice Samples
 async function loadSamples() {
   const listEl = document.getElementById('samples-list');
@@ -93,7 +144,6 @@ async function loadSamples() {
     const data = await res.json();
 
     if (data.samples && data.samples.length > 0) {
-      // Auto-select first sample if none selected yet
       if (!uploadedSampleFilename) {
         selectSample(data.samples[0].filename, data.samples[0].url, `${data.samples[0].size_mb} MB`, false);
       }
@@ -130,7 +180,6 @@ function selectSample(filename, url, meta, showToast = true) {
   player.src = url;
   document.getElementById('active-sample-card').classList.remove('hidden');
 
-  // Refresh sample list badges
   const listEl = document.getElementById('samples-list');
   const items = listEl.querySelectorAll('.sample-item');
   items.forEach(item => {
@@ -228,7 +277,7 @@ async function toggleRecording() {
 async function generateVoiceover() {
   const scriptText = document.getElementById('script-text').value.trim();
   const speed = parseFloat(document.getElementById('speed-slider').value);
-  const removeSilence = document.getElementById('remove-silence-chk').checked;
+  const pitch = parseInt(document.getElementById('pitch-slider').value, 10);
 
   if (!scriptText) {
     showStatus('Please enter some text in the script box first.', 'warning');
@@ -249,8 +298,9 @@ async function generateVoiceover() {
     sample_transcript: document.getElementById('sample-transcript').value.trim(),
     script_text: scriptText,
     speed: speed,
+    pitch: pitch,
     neural_voice: document.getElementById('neural-voice-select').value,
-    remove_silence: removeSilence
+    remove_silence: false
   };
 
   try {
@@ -279,7 +329,8 @@ async function generateVoiceover() {
       showStatus('Voiceover successfully synthesized!', 'info');
       setTimeout(hideStatus, 4000);
     } else if (data.status === 'warning') {
-      showStatus(data.message, 'warning');
+      // If ZeroGPU hit limit, give clear button to switch to Indian Neural
+      showStatus(`${data.message}`, 'warning');
     } else {
       showStatus(`Synthesis error: ${data.detail || 'Generation failed'}`, 'error');
     }

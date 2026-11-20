@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .config import HOST, OUTPUT_DIR, PORT, STATIC_DIR, UPLOAD_DIR
+from .config import HOST, OUTPUT_DIR, PORT, STATIC_DIR, UPLOAD_DIR, get_hf_token, set_hf_token
 from .audio_utils import get_audio_info, save_uploaded_audio
 from .tts_engine import tts_engine
 
@@ -35,8 +35,12 @@ class GenerateRequest(BaseModel):
     sample_transcript: Optional[str] = ""
     script_text: str
     speed: float = 1.0
-    neural_voice: Optional[str] = "en-US-ChristopherNeural"
+    pitch: int = 0  # In Hz offset, e.g. -20 to +20
+    neural_voice: Optional[str] = "te-IN-MohanNeural"
     remove_silence: bool = True
+
+class TokenRequest(BaseModel):
+    token: str
 
 @app.get("/")
 async def serve_index():
@@ -47,7 +51,18 @@ async def serve_index():
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "online", "engine": "Voice Studio Active"}
+    has_token = bool(get_hf_token())
+    return {"status": "online", "engine": "Voice Studio Active", "has_hf_token": has_token}
+
+@app.get("/api/token")
+async def get_token_status():
+    token = get_hf_token()
+    return {"has_token": bool(token), "masked_token": f"{token[:4]}...{token[-4:]}" if len(token) > 8 else ""}
+
+@app.post("/api/token")
+async def update_token(req: TokenRequest):
+    set_hf_token(req.token)
+    return {"status": "success", "message": "Hugging Face token updated successfully!"}
 
 @app.post("/api/upload-sample")
 async def upload_sample(file: UploadFile = File(...)):
@@ -88,34 +103,40 @@ async def list_samples():
 @app.get("/api/neural-voices")
 async def list_neural_voices():
     """
-    Available high-fidelity neural voices.
+    Available high-fidelity neural voices supporting Telugu, Hindi, and English.
     """
     return {
         "voices": [
-            {"id": "hi-IN-MadhurNeural", "name": "Madhur (Hindi Male - Natural & Fluent)", "gender": "Male"},
-            {"id": "hi-IN-SwaraNeural", "name": "Swara (Hindi Female - Expressive)", "gender": "Female"},
-            {"id": "en-US-ChristopherNeural", "name": "Christopher (US Male - Warm & Studio)", "gender": "Male"},
-            {"id": "en-US-JennyNeural", "name": "Jenny (US Female - Natural & Clear)", "gender": "Female"},
-            {"id": "en-US-GuyNeural", "name": "Guy (US Male - Casual)", "gender": "Male"},
-            {"id": "en-US-AriaNeural", "name": "Aria (US Female - Expressive)", "gender": "Female"},
-            {"id": "en-IN-PrabhatNeural", "name": "Prabhat (Indian English Male - Fluent)", "gender": "Male"},
-            {"id": "en-IN-NeerjaNeural", "name": "Neerja (Indian English Female - Expressive)", "gender": "Female"},
-            {"id": "en-GB-RyanNeural", "name": "Ryan (British Male - Articulate)", "gender": "Male"},
-            {"id": "en-GB-SoniaNeural", "name": "Sonia (British Female - Calm)", "gender": "Female"},
-            {"id": "en-AU-WilliamNeural", "name": "William (Australian Male)", "gender": "Male"}
+            # Telugu Voices
+            {"id": "te-IN-MohanNeural", "name": "Mohan (Telugu Male - Natural & Clear)", "gender": "Male", "lang": "Telugu"},
+            {"id": "te-IN-ShrutiNeural", "name": "Shruti (Telugu Female - Expressive)", "gender": "Female", "lang": "Telugu"},
+            # Hindi Voices
+            {"id": "hi-IN-MadhurNeural", "name": "Madhur (Hindi Male - Natural & Fluent)", "gender": "Male", "lang": "Hindi"},
+            {"id": "hi-IN-SwaraNeural", "name": "Swara (Hindi Female - Expressive)", "gender": "Female", "lang": "Hindi"},
+            # Indian English Voices
+            {"id": "en-IN-PrabhatNeural", "name": "Prabhat (Indian English Male - Fluent)", "gender": "Male", "lang": "English (IN)"},
+            {"id": "en-IN-NeerjaNeural", "name": "Neerja (Indian English Female - Professional)", "gender": "Female", "lang": "English (IN)"},
+            # Global English Voices
+            {"id": "en-US-ChristopherNeural", "name": "Christopher (US Male - Warm Studio)", "gender": "Male", "lang": "English (US)"},
+            {"id": "en-US-JennyNeural", "name": "Jenny (US Female - Clear)", "gender": "Female", "lang": "English (US)"},
+            {"id": "en-GB-RyanNeural", "name": "Ryan (British Male - Articulate)", "gender": "Male", "lang": "English (UK)"}
         ]
     }
 
 @app.post("/api/generate")
 async def generate_speech(req: GenerateRequest):
     """
-    Generates speech using either cloned voice (F5-TTS cloud) or neural fallback.
+    Generates speech using either cloned voice (F5-TTS cloud) or neural engine.
     """
     if not req.script_text.strip():
         raise HTTPException(status_code=400, detail="Script text cannot be empty.")
 
+    # Rate format (+0%)
     rate_percent = int((req.speed - 1.0) * 100)
     rate_str = f"{'+' if rate_percent >= 0 else ''}{rate_percent}%"
+    
+    # Pitch format (+0Hz)
+    pitch_str = f"{'+' if req.pitch >= 0 else ''}{req.pitch}Hz"
 
     if req.mode == "clone":
         if not req.sample_filename:
@@ -138,7 +159,7 @@ async def generate_speech(req: GenerateRequest):
                 status_code=200,
                 content={
                     "status": "warning",
-                    "message": f"Cloud cloning space reported: {result_path_or_msg}. Try again or switch to Neural studio voice.",
+                    "message": f"{result_path_or_msg}",
                     "can_fallback": True
                 }
             )
@@ -152,11 +173,12 @@ async def generate_speech(req: GenerateRequest):
         }
     else:
         # Neural mode
-        voice_id = req.neural_voice or "en-US-ChristopherNeural"
+        voice_id = req.neural_voice or "te-IN-MohanNeural"
         success, result_path_or_msg, engine = await tts_engine.generate_neural_tts(
             text=req.script_text,
             voice=voice_id,
-            rate=rate_str
+            rate=rate_str,
+            pitch=pitch_str
         )
         if not success:
             raise HTTPException(status_code=500, detail=result_path_or_msg)

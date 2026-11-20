@@ -7,18 +7,20 @@ from typing import Optional, Tuple
 import edge_tts
 from gradio_client import Client, handle_file
 
-from .config import HF_TOKEN, DEFAULT_HF_SPACE, OUTPUT_DIR
+from .config import DEFAULT_HF_SPACE, OUTPUT_DIR, get_hf_token
 
 class TTSEngine:
     def __init__(self):
         self._hf_client: Optional[Client] = None
+        self._cached_token: Optional[str] = None
         self.space_name: str = DEFAULT_HF_SPACE
 
     def _get_hf_client(self) -> Client:
-        if self._hf_client is None:
-            token = HF_TOKEN.strip() if (HF_TOKEN and HF_TOKEN.strip()) else None
-            # Note: gradio_client uses 'token', NOT 'hf_token'
+        current_token = get_hf_token()
+        if self._hf_client is None or self._cached_token != current_token:
+            token = current_token if current_token else None
             self._hf_client = Client(self.space_name, token=token)
+            self._cached_token = current_token
         return self._hf_client
 
     async def clone_voice_cloud(
@@ -70,13 +72,13 @@ class TTSEngine:
     async def generate_neural_tts(
         self,
         text: str,
-        voice: str = "en-US-ChristopherNeural",
+        voice: str = "te-IN-MohanNeural",
         rate: str = "+0%",
         pitch: str = "+0Hz"
     ) -> Tuple[bool, str, str]:
         """
         Generates high-definition neural speech using Edge Neural TTS.
-        Extremely reliable, zero latency, free cloud delivery. Supports multi-language (English, Hindi, etc.).
+        Native support for Telugu, Hindi, and English.
         """
         try:
             out_filename = f"neural_{uuid.uuid4().hex[:8]}.mp3"
