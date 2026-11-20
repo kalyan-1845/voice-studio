@@ -1,13 +1,44 @@
 import asyncio
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 import edge_tts
+import numpy as np
+import soundfile as sf
 from gradio_client import Client, handle_file
 
 from .config import DEFAULT_HF_SPACE, OUTPUT_DIR, get_hf_token
+
+def split_text_into_chunks(text: str, max_chunk_len: int = 150) -> List[str]:
+    """
+    Splits long paragraphs into natural sentence chunks to ensure consistent 1.0x pacing
+    and prevent AI models from rushing, skipping, or hallucinating on long scripts.
+    Supports English (.?!), Hindi (।), Telugu, and punctuation.
+    """
+    text = text.strip()
+    if len(text) <= max_chunk_len:
+        return [text]
+
+    # Split by major punctuation
+    raw_sentences = re.split(r'([.?!।|;\n]+[\s]*)', text)
+    chunks = []
+    current_chunk = ""
+
+    for part in raw_sentences:
+        current_chunk += part
+        if re.search(r'[.?!।|;\n]', part) or len(current_chunk) >= max_chunk_len:
+            cleaned = current_chunk.strip()
+            if cleaned:
+                chunks.append(cleaned)
+            current_chunk = ""
+
+    if current_chunk.strip():
+        chunks.append(current_chunk.strip())
+
+    return chunks if chunks else [text]
 
 class TTSEngine:
     def __init__(self):
@@ -23,29 +54,24 @@ class TTSEngine:
             self._cached_token = current_token
         return self._hf_client
 
-    async def clone_voice_cloud(
+    async def _synthesize_single_chunk(
         self,
         reference_audio_path: Path,
         reference_text: str,
-        target_text: str,
-        remove_silence: bool = True
-    ) -> Tuple[bool, str, Optional[str]]:
-        """
-        Clones voice using cloud-hosted F5-TTS / E2-TTS via Hugging Face.
-        Returns: (success, result_filepath_or_error, engine_used)
-        """
+        target_chunk: str,
+        remove_silence: bool = False
+    ) -> Tuple[bool, Optional[str]]:
+        """Synthesizes an individual sentence chunk via F5-TTS cloud."""
         try:
             loop = asyncio.get_event_loop()
-            
+
             def _call_hf():
                 client = self._get_hf_client()
                 audio_file = handle_file(str(reference_audio_path))
-                
-                # Call named endpoint /predict
                 return client.predict(
                     ref_audio=audio_file,
                     ref_text=reference_text if reference_text else "",
-                    gen_text=target_text,
+                    gen_text=target_chunk,
                     remove_silence=remove_silence,
                     api_name="/predict"
                 )
@@ -57,15 +83,69 @@ class TTSEngine:
             else:
                 generated_src = result_path
 
-            if not generated_src or not os.path.exists(str(generated_src)):
-                return False, "Cloud generation produced no audio file.", None
+            if generated_src and os.path.exists(str(generated_src)):
+                return True, str(generated_src)
+            return False, None
+        except Exception as e:
+            return False, str(e)
 
-            # Copy to outputs directory with unique name
+    async def clone_voice_cloud(
+        self,
+        reference_audio_path: Path,
+        reference_text: str,
+        target_text: str,
+        remove_silence: bool = False,
+        style: str = "natural"
+    ) -> Tuple[bool, str, Optional[str]]:
+        """
+        Clones voice with multi-paragraph sentence chunking,
+        ensuring natural 1.0x pacing without rushing or truncation.
+        """
+        try:
+            chunks = split_text_into_chunks(target_text)
+            
+            # Determine pause between sentences based on style
+            pause_ms = 220
+            if style == "aggressive":
+                pause_ms = 140
+            elif style == "calm":
+                pause_ms = 350
+
+            chunk_audio_arrays = []
+            target_sr = 24000
+
+            for idx, chunk in enumerate(chunks):
+                success, chunk_file_path = await self._synthesize_single_chunk(
+                    reference_audio_path=reference_audio_path,
+                    reference_text=reference_text,
+                    target_chunk=chunk,
+                    remove_silence=remove_silence
+                )
+
+                if not success or not chunk_file_path:
+                    # If cloud returns an error string, bubble it up
+                    err_msg = chunk_file_path or "Cloud generation failed on chunk."
+                    return False, f"Cloud voice cloning error: {err_msg}", None
+
+                data, sr_rate = sf.read(chunk_file_path)
+                if data.ndim > 1:
+                    data = data.mean(axis=1)
+                target_sr = sr_rate
+                chunk_audio_arrays.append(data)
+
+                # Add natural pause between sentences (except after the final sentence)
+                if idx < len(chunks) - 1:
+                    silence_samples = int(target_sr * (pause_ms / 1000.0))
+                    chunk_audio_arrays.append(np.zeros(silence_samples, dtype=np.float32))
+
+            # Concatenate all sentence chunks seamlessly
+            combined_audio = np.concatenate(chunk_audio_arrays)
+
             out_filename = f"cloned_{uuid.uuid4().hex[:8]}.wav"
             final_path = OUTPUT_DIR / out_filename
-            shutil.copy(str(generated_src), str(final_path))
+            sf.write(str(final_path), combined_audio, target_sr)
 
-            return True, str(final_path), "F5-TTS (Cloud)"
+            return True, str(final_path), f"F5-TTS Multi-Sentence ({len(chunks)} Chunks)"
         except Exception as e:
             return False, f"Cloud voice cloning error: {str(e)}", None
 
@@ -78,7 +158,7 @@ class TTSEngine:
     ) -> Tuple[bool, str, str]:
         """
         Generates high-definition neural speech using Edge Neural TTS.
-        Native support for Telugu, Hindi, and English.
+        Native support for Telugu, Hindi, and English with zero quota limits.
         """
         try:
             out_filename = f"neural_{uuid.uuid4().hex[:8]}.mp3"

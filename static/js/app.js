@@ -5,13 +5,11 @@ let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 
-// Multilingual Presets (Telugu, Hindi, English)
+// Multi-Paragraph Presets (Telugu, Hindi, English)
 const SCRIPT_PRESETS = {
-  telugu: "నమస్కారం! నా పేరు కళ్యాణ్. వాయిస్ స్టూడియోకి స్వాగతం. ఈ ఆడియో తెలుగు భాషలో చాలా సహజంగా, స్పష్టంగా వినిపిస్తుంది.",
-  hindi: "नमस्ते! मेरा नाम कल्याण है। Voice Studio में आपका स्वागत है। यह आवाज़ पूरी तरह से प्राकृतिक और साफ़ सुनाई देती है।",
-  intro: "Welcome to today's episode. We have a lot of ground to cover, from emerging technologies to real-world lessons you can apply right away.",
-  tutorial: "In this step-by-step guide, I'll walk you through the entire process from start to finish. Follow along closely, and you'll have this working in less than five minutes.",
-  commercial: "Looking to take your workflow to the next level? Discover how effortless creation can be with next-generation tools designed for creators like you."
+  telugu_story: "నమస్కారం! నా పేరు కళ్యాణ్. ఆర్టిఫిషియల్ ఇంటెలిజెన్స్ మరియు వాయిస్ టెక్నాలజీతో మనం ఏదైనా సాధించవచ్చు. ఇది మన సొంత స్వరాన్ని ఖచ్చితంగా పోలి ఉంటుంది. ప్రతి వాక్యం ఎంతో స్పష్టంగా, సహజమైన గమనంతో వినిపిస్తుంది.",
+  hindi_story: "नमस्ते! मेरा नाम कल्याण है। आधुनिक तकनीक और एआई की मदद से हम अपनी आवाज़ को पूरी तरह से प्राकृतिक बना सकते हैं। यह बिना किसी रुकावट के बिल्कुल साफ़ और स्पष्ट सुनाई देती है। आप इसे किसी भी लंबे पैराग्राफ के लिए आसानी से इस्तेमाल कर सकते हैं।",
+  english_story: "Welcome to today's episode. Voice synthesis has evolved dramatically, allowing us to generate full paragraphs with natural pacing, clear pauses, and high vocal fidelity. Every sentence flows seamlessly without rushing or robotic artifacts."
 };
 
 // Initialize
@@ -265,7 +263,7 @@ async function toggleRecording() {
       isRecording = true;
       recordBtn.classList.add('recording');
       recordText.innerText = 'Stop Recording';
-      showStatus('Recording your voice... Speak clearly for 15-30 seconds.', 'info');
+      showStatus('Recording your clean voice... Speak naturally for 15-30 seconds.', 'info');
     } catch (err) {
       showStatus(`Microphone access error: ${err.message}`, 'error');
     }
@@ -275,7 +273,7 @@ async function toggleRecording() {
     }
     isRecording = false;
     recordBtn.classList.remove('recording');
-    recordText.innerText = 'Record Voice';
+    recordText.innerText = 'Record Clean Voice';
   }
 }
 
@@ -284,6 +282,7 @@ async function generateVoiceover() {
   const scriptText = document.getElementById('script-text').value.trim();
   const speed = parseFloat(document.getElementById('speed-slider').value);
   const pitch = parseInt(document.getElementById('pitch-slider').value, 10);
+  const style = document.getElementById('style-select').value;
 
   if (!scriptText) {
     showStatus('Please enter some text in the script box first.', 'warning');
@@ -305,6 +304,7 @@ async function generateVoiceover() {
     script_text: scriptText,
     speed: speed,
     pitch: pitch,
+    style: style,
     neural_voice: document.getElementById('neural-voice-select').value,
     remove_silence: false
   };
@@ -332,7 +332,7 @@ async function generateVoiceover() {
       outCard.classList.remove('hidden');
       outPlayer.play().catch(() => {});
       loadHistory();
-      showStatus('Voiceover successfully synthesized and pitch-calibrated!', 'info');
+      showStatus('Voiceover successfully synthesized with natural sentence flow!', 'info');
       setTimeout(hideStatus, 4000);
     } else if (data.status === 'warning') {
       showStatus(`${data.message}`, 'warning');
@@ -353,7 +353,7 @@ function setGeneratingState(isGenerating) {
 
   btn.disabled = isGenerating;
   spinner.classList.toggle('hidden', !isGenerating);
-  btnText.innerText = isGenerating ? 'Synthesizing Audio via Cloud...' : '✨ Generate Studio Voiceover';
+  btnText.innerText = isGenerating ? 'Synthesizing Paragraphs via Cloud...' : '✨ Generate Studio Voiceover';
 }
 
 function showStatus(msg, type = 'info') {

@@ -26,7 +26,7 @@ def save_uploaded_audio(file_bytes: bytes, original_filename: str, upload_dir: P
 
 def estimate_pitch(file_path: Path) -> float:
     """
-    Estimates the median fundamental frequency (F0) of speech in Hz.
+    Estimates the median fundamental frequency (F0) of speech in Hz using autocorrelation.
     """
     try:
         data, sr_rate = sf.read(str(file_path))
@@ -69,7 +69,6 @@ def transcribe_audio_auto(file_path: Path) -> str:
             audio = r.record(source)
 
         transcription = ""
-        # Try Indian languages in order
         for lang in ['hi-IN', 'te-IN', 'en-IN', 'en-US']:
             try:
                 transcription = r.recognize_google(audio, language=lang)
@@ -85,29 +84,43 @@ def transcribe_audio_auto(file_path: Path) -> str:
     except Exception:
         return ""
 
-def pitch_shift_to_target(audio_path: Path, target_pitch: float) -> Path:
+def pitch_shift_to_target(audio_path: Path, target_pitch: float, style: str = "natural") -> Path:
     """
-    Pitch-shifts the generated audio so its F0 matches the original speaker's target pitch.
+    Pitch-shifts the generated audio so its F0 matches the original speaker's target pitch,
+    incorporating delivery style adjustments (e.g. aggressive, calm).
     """
     try:
+        # Style pitch adjustment
+        style_offset_hz = 0.0
+        if style == "aggressive":
+            style_offset_hz = 12.0
+        elif style == "calm":
+            style_offset_hz = -12.0
+
+        effective_target = target_pitch + style_offset_hz
         current_pitch = estimate_pitch(audio_path)
-        if current_pitch <= 0 or target_pitch <= 0:
+
+        if current_pitch <= 0 or effective_target <= 0:
             return audio_path
 
-        # If difference is more than 15 Hz, pitch shift to match
-        diff = abs(target_pitch - current_pitch)
-        if diff > 15:
+        diff = abs(effective_target - current_pitch)
+        if diff > 10:
             y, sr_rate = sf.read(str(audio_path))
-            n_steps = float(12 * np.log2(target_pitch / current_pitch))
+            n_steps = float(12 * np.log2(effective_target / current_pitch))
             
-            # Bound n_steps to avoid extreme distortion
+            # Bound shift to realistic bounds [-8 to +8 semitones]
             n_steps = max(min(n_steps, 8.0), -8.0)
             y_shifted = librosa.effects.pitch_shift(y, sr=sr_rate, n_steps=n_steps)
             
+            # Peak normalize
+            max_val = np.max(np.abs(y_shifted))
+            if max_val > 0.01:
+                y_shifted = (y_shifted / max_val) * 0.92
+
             sf.write(str(audio_path), y_shifted, sr_rate)
         return audio_path
     except Exception as e:
-        print(f"Pitch shift warning: {e}")
+        print(f"Pitch shift notice: {e}")
         return audio_path
 
 def get_audio_info(file_path: Path) -> dict:

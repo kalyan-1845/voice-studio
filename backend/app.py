@@ -36,6 +36,7 @@ class GenerateRequest(BaseModel):
     script_text: str
     speed: float = 1.0
     pitch: int = 0
+    style: str = "natural"  # "natural", "aggressive", "calm"
     neural_voice: Optional[str] = "te-IN-MohanNeural"
     remove_silence: bool = False
 
@@ -123,15 +124,27 @@ async def list_neural_voices():
 @app.post("/api/generate")
 async def generate_speech(req: GenerateRequest):
     """
-    Generates speech using cloned voice or neural engine,
-    with automatic pitch-matching to reproduce the speaker's true voice tone.
+    Generates speech supporting full paragraphs, sentence chunking,
+    and delivery style (Natural, Aggressive, Calm).
     """
     if not req.script_text.strip():
         raise HTTPException(status_code=400, detail="Script text cannot be empty.")
 
+    # Base rate percent
     rate_percent = int((req.speed - 1.0) * 100)
+    
+    # Delivery style adjustments
+    style_pitch_offset = 0
+    if req.style == "aggressive":
+        rate_percent += 5
+        style_pitch_offset = 6
+    elif req.style == "calm":
+        rate_percent -= 5
+        style_pitch_offset = -6
+
     rate_str = f"{'+' if rate_percent >= 0 else ''}{rate_percent}%"
-    pitch_str = f"{'+' if req.pitch >= 0 else ''}{req.pitch}Hz"
+    total_pitch = req.pitch + style_pitch_offset
+    pitch_str = f"{'+' if total_pitch >= 0 else ''}{total_pitch}Hz"
 
     if req.mode == "clone":
         if not req.sample_filename:
@@ -141,7 +154,7 @@ async def generate_speech(req: GenerateRequest):
         if not sample_path.exists():
             raise HTTPException(status_code=404, detail="Selected voice sample was not found.")
 
-        # If transcript not provided, auto-transcribe to prevent elderly/distorted hallucination
+        # Reference transcript lookup / auto-transcribe
         reference_text = req.sample_transcript.strip() if req.sample_transcript else ""
         if not reference_text:
             reference_text = transcribe_audio_auto(sample_path)
@@ -149,12 +162,13 @@ async def generate_speech(req: GenerateRequest):
         # Detect original target pitch
         original_pitch = estimate_pitch(sample_path)
 
-        # Attempt cloud voice clone
+        # Multi-paragraph voice cloning with sentence chunking & natural pacing
         success, result_path_or_msg, engine = await tts_engine.clone_voice_cloud(
             reference_audio_path=sample_path,
             reference_text=reference_text,
             target_text=req.script_text,
-            remove_silence=req.remove_silence
+            remove_silence=req.remove_silence,
+            style=req.style
         )
 
         if not success:
@@ -169,14 +183,14 @@ async def generate_speech(req: GenerateRequest):
 
         output_file = Path(result_path_or_msg)
 
-        # Apply Automatic Pitch-Matching to eliminate flat/elderly voice drop
-        pitch_shift_to_target(output_file, original_pitch)
+        # Apply Automatic Pitch-Matching to match speaker's exact pitch & style
+        pitch_shift_to_target(output_file, original_pitch, style=req.style)
 
         return {
             "status": "success",
             "url": f"/api/audio/outputs/{output_file.name}",
             "filename": output_file.name,
-            "engine": f"{engine} • Pitch Matched ({original_pitch:.0f} Hz)"
+            "engine": f"{engine} • Pitch Calibrated ({original_pitch:.0f} Hz) • {req.style.capitalize()}"
         }
     else:
         # Neural mode
@@ -195,7 +209,7 @@ async def generate_speech(req: GenerateRequest):
             "status": "success",
             "url": f"/api/audio/outputs/{output_file.name}",
             "filename": output_file.name,
-            "engine": engine
+            "engine": f"{engine} • {req.style.capitalize()}"
         }
 
 @app.get("/api/audio/{folder}/{filename}")

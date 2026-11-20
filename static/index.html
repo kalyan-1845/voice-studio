@@ -25,7 +25,7 @@
         </div>
         <div class="brand-text">
           <h1>Voice<span class="gradient-text">Studio</span></h1>
-          <p class="brand-subtitle">Multilingual AI Voice Suite • Telugu, Hindi & English</p>
+          <p class="brand-subtitle">Paragraph Synthesis • Auto Pitch Calibration • Indic Polyglot</p>
         </div>
       </div>
       
@@ -104,14 +104,14 @@
                   <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
               </div>
-              <p class="dropzone-title">Upload your 15s–60s clear voice sample</p>
+              <p class="dropzone-title">Upload your clean 15s–60s voice sample</p>
               <p class="dropzone-hint">WAV, MP3, M4A, or FLAC</p>
               <div class="button-row">
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('audio-input').click()">
                   Browse File
                 </button>
                 <button type="button" class="btn btn-outline" id="record-btn" onclick="toggleRecording()">
-                  <span class="rec-dot"></span> <span id="record-text">Record Voice</span>
+                  <span class="rec-dot"></span> <span id="record-text">Record Clean Voice</span>
                 </button>
               </div>
             </div>
@@ -131,7 +131,7 @@
                   <p class="sample-filename" id="sample-filename">sample.wav</p>
                   <span class="active-badge">Active Clone Voice</span>
                 </div>
-                <p class="sample-meta" id="sample-meta">Ready for zero-shot cloning</p>
+                <p class="sample-meta" id="sample-meta">Auto Pitch Calibrated</p>
               </div>
             </div>
             <audio id="sample-audio-player" controls class="mini-player"></audio>
@@ -146,12 +146,12 @@
             <div id="samples-list" class="samples-list"></div>
           </div>
 
-          <!-- Transcript Reference (Crucial to avoid grandma/robotic distortions) -->
+          <!-- Transcript Reference (Auto-populated via Speech Recognition) -->
           <div class="form-group" style="margin-top: 1rem;">
             <label for="sample-transcript">
-              Reference Audio Transcript <span class="label-opt">(Prevents distorted/unnatural artifacts)</span>
+              Reference Audio Transcript <span class="label-opt">(Auto-detected to match phonemes)</span>
             </label>
-            <textarea id="sample-transcript" class="input-text" rows="2" placeholder="Type the words you spoke in your voice recording sample..."></textarea>
+            <textarea id="sample-transcript" class="input-text" rows="2" placeholder="Auto-populated when voice sample is uploaded or recorded..."></textarea>
           </div>
         </div>
 
@@ -200,23 +200,31 @@
         <!-- Language Quick Preset Chips -->
         <div class="chip-container">
           <span class="chip-label">Quick Presets:</span>
-          <button class="chip" onclick="applyPreset('telugu')">తెలుగు (Telugu)</button>
-          <button class="chip" onclick="applyPreset('hindi')">हिंदी (Hindi)</button>
-          <button class="chip" onclick="applyPreset('intro')">English Intro</button>
-          <button class="chip" onclick="applyPreset('tutorial')">Tutorial</button>
+          <button class="chip" onclick="applyPreset('telugu_story')">తెలుగు పేరా (Paragraph)</button>
+          <button class="chip" onclick="applyPreset('hindi_story')">हिंदी पैराग्राफ (Paragraph)</button>
+          <button class="chip" onclick="applyPreset('english_story')">English Paragraph</button>
         </div>
 
-        <!-- Script Area -->
+        <!-- Script Area: Multi-Paragraphs supported -->
         <div class="form-group">
           <div class="label-row">
-            <label for="script-text">Voiceover Script</label>
+            <label for="script-text">Voiceover Script (Full Paragraphs Supported)</label>
             <span class="char-count" id="script-counter">0 words | ~0s</span>
           </div>
-          <textarea id="script-text" class="script-textarea" rows="7" placeholder="రాయండి లేదా కాపీ చేయండి... (Type in Telugu, Hindi, or English)"></textarea>
+          <textarea id="script-text" class="script-textarea" rows="8" placeholder="Type or paste entire paragraphs here. The engine automatically chunks sentences for seamless 1.0x natural flow..."></textarea>
         </div>
 
-        <!-- Audio Settings: Speed, Pitch, Silence -->
-        <div class="settings-grid">
+        <!-- Audio Settings: Delivery Style, Speed, Pitch -->
+        <div class="settings-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+          <div class="setting-item">
+            <label for="style-select" style="margin-bottom: 0.3rem;">Delivery Style</label>
+            <select id="style-select" class="input-select" style="padding: 0.45rem;">
+              <option value="natural" selected>Natural (1.0x Pace)</option>
+              <option value="aggressive">Aggressive & Punchy</option>
+              <option value="calm">Calm & Narrative</option>
+            </select>
+          </div>
+
           <div class="setting-item">
             <div class="label-row">
               <label for="speed-slider">Speed</label>
@@ -227,7 +235,7 @@
 
           <div class="setting-item">
             <div class="label-row">
-              <label for="pitch-slider">Pitch Offset (Tone)</label>
+              <label for="pitch-slider">Pitch Tone</label>
               <span id="pitch-val">+0 Hz</span>
             </div>
             <input type="range" id="pitch-slider" min="-30" max="30" step="2" value="0" class="slider" oninput="updatePitchVal(this.value)">
