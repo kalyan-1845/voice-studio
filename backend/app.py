@@ -69,16 +69,17 @@ async def upload_sample(file: UploadFile = File(...)):
 @app.get("/api/samples")
 async def list_samples():
     """
-    Lists uploaded voice samples.
+    Lists uploaded voice samples sorted by newest first.
     """
     try:
         files = []
-        for file_path in UPLOAD_DIR.glob("*.*"):
+        for file_path in sorted(UPLOAD_DIR.glob("*.*"), key=os.path.getmtime, reverse=True):
             if file_path.suffix.lower() in [".wav", ".mp3", ".ogg", ".m4a", ".flac"]:
                 files.append({
                     "filename": file_path.name,
                     "url": f"/api/audio/uploads/{file_path.name}",
-                    "size_mb": round(os.path.getsize(file_path) / (1024 * 1024), 2)
+                    "size_mb": round(os.path.getsize(file_path) / (1024 * 1024), 2),
+                    "created_at": file_path.stat().st_mtime
                 })
         return {"samples": files}
     except Exception as e:

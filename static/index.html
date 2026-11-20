@@ -30,7 +30,7 @@
       </div>
       <div class="header-status">
         <span class="status-indicator"></span>
-        <span class="status-text">Cloud Engine Ready</span>
+        <span class="status-text">Cloud Engine Active (0% PC RAM Used)</span>
       </div>
     </header>
 
@@ -76,7 +76,7 @@
                   <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
               </div>
-              <p class="dropzone-title">Drop your 20s–3min voice sample here</p>
+              <p class="dropzone-title">Drop new voice sample here</p>
               <p class="dropzone-hint">WAV, MP3, M4A, or FLAC (Max 25MB)</p>
               <div class="button-row">
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('audio-input').click()">
@@ -98,20 +98,34 @@
                   <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
                 </svg>
               </div>
-              <div>
-                <p class="sample-filename" id="sample-filename">sample.wav</p>
+              <div style="flex: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <p class="sample-filename" id="sample-filename">sample.wav</p>
+                  <span class="active-badge">Active Clone Voice</span>
+                </div>
                 <p class="sample-meta" id="sample-meta">Ready for zero-shot cloning</p>
               </div>
             </div>
             <audio id="sample-audio-player" controls class="mini-player"></audio>
           </div>
 
+          <!-- Saved Voice Samples Library with "Use Voice" Button -->
+          <div class="saved-samples-box">
+            <div class="label-row" style="margin-bottom: 0.6rem;">
+              <label>Saved Voice Profiles</label>
+              <button class="btn btn-sm btn-ghost" onclick="loadSamples()">Refresh</button>
+            </div>
+            <div id="samples-list" class="samples-list">
+              <!-- Rendered dynamically via JS -->
+            </div>
+          </div>
+
           <!-- Transcript Reference (Optional) -->
           <div class="form-group" style="margin-top: 1rem;">
             <label for="sample-transcript">
-              Voice Sample Transcript <span class="label-opt">(Recommended for 100% clone fidelity)</span>
+              Voice Sample Transcript <span class="label-opt">(Optional - Improves pronunciation)</span>
             </label>
-            <textarea id="sample-transcript" class="input-text" rows="2" placeholder="What words did you speak in your voice sample? (e.g. 'Hello, this is my voice recording for testing.')"></textarea>
+            <textarea id="sample-transcript" class="input-text" rows="2" placeholder="What words did you speak in your voice sample? (e.g. 'Hello, this is my voice recording.')"></textarea>
           </div>
         </div>
 
@@ -155,6 +169,7 @@
         <div class="chip-container">
           <span class="chip-label">Quick Presets:</span>
           <button class="chip" onclick="applyPreset('intro')">YouTube Intro</button>
+          <button class="chip" onclick="applyPreset('hindi')">Hindi Intro</button>
           <button class="chip" onclick="applyPreset('tutorial')">Tutorial</button>
           <button class="chip" onclick="applyPreset('podcast')">Podcast Clip</button>
           <button class="chip" onclick="applyPreset('commercial')">Promo Ad</button>
@@ -225,7 +240,7 @@
     <!-- Bottom Panel: Production History -->
     <section class="panel history-panel">
       <div class="panel-header">
-        <h2>Production Library</h2>
+        <h2>Production Library (Generated Audio Clips)</h2>
         <button class="btn btn-sm btn-ghost" onclick="loadHistory()">Refresh Library</button>
       </div>
       <div id="history-list" class="history-grid">

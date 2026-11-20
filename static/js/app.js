@@ -8,6 +8,7 @@ let isRecording = false;
 // Presets
 const SCRIPT_PRESETS = {
   intro: "Hey everyone, welcome back to the channel! Today we're diving into something really exciting that you won't want to miss. Make sure to hit subscribe and let's jump right in.",
+  hindi: "नमस्ते! मेरा नाम कल्याण है। Voice Studio में आपका स्वागत है। यह आवाज़ पूरी तरह से AI और Cloud द्वारा क्लोन की गई है।",
   tutorial: "In this step-by-step guide, I'll walk you through the entire process from start to finish. Follow along closely, and you'll have this working in less than five minutes.",
   podcast: "Welcome to today's episode. We have a lot of ground to cover, from emerging technologies to real-world lessons you can apply right away.",
   commercial: "Looking to take your workflow to the next level? Discover how effortless creation can be with next-generation tools designed for creators like you."
@@ -16,6 +17,7 @@ const SCRIPT_PRESETS = {
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  loadSamples();
   loadHistory();
   updateWordCount();
 });
@@ -67,7 +69,6 @@ function switchMode(mode) {
 function updateWordCount() {
   const text = document.getElementById('script-text').value.trim();
   const words = text ? text.split(/\s+/).length : 0;
-  // Estimate ~140 words per minute average speaking rate
   const estSeconds = Math.round((words / 140) * 60);
   document.getElementById('script-counter').innerText = `${words} words | ~${estSeconds}s`;
 }
@@ -82,6 +83,78 @@ function applyPreset(key) {
 
 function updateSpeedVal(val) {
   document.getElementById('speed-val').innerText = `${parseFloat(val).toFixed(2)}x`;
+}
+
+// Load and Display Saved Voice Samples
+async function loadSamples() {
+  const listEl = document.getElementById('samples-list');
+  try {
+    const res = await fetch('/api/samples');
+    const data = await res.json();
+
+    if (data.samples && data.samples.length > 0) {
+      // Auto-select first sample if none selected yet
+      if (!uploadedSampleFilename) {
+        selectSample(data.samples[0].filename, data.samples[0].url, `${data.samples[0].size_mb} MB`, false);
+      }
+
+      listEl.innerHTML = data.samples.map(s => {
+        const isSelected = uploadedSampleFilename === s.filename;
+        return `
+          <div class="sample-item ${isSelected ? 'selected' : ''}">
+            <div class="sample-item-info">
+              <strong title="${s.filename}">${s.filename}</strong>
+              <span>${s.size_mb} MB</span>
+            </div>
+            <audio controls src="${s.url}" class="sample-item-player"></audio>
+            <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-secondary'}" onclick="selectSample('${s.filename}', '${s.url}', '${s.size_mb} MB', true)">
+              ${isSelected ? '✓ Active' : 'Use Voice'}
+            </button>
+          </div>
+        `;
+      }).join('');
+    } else {
+      listEl.innerHTML = '<p class="empty-state-sm">No saved voice profiles yet. Record or upload one above!</p>';
+    }
+  } catch (err) {
+    console.error('Failed to load voice samples:', err);
+  }
+}
+
+// Select a sample to use for cloning
+function selectSample(filename, url, meta, showToast = true) {
+  uploadedSampleFilename = filename;
+  document.getElementById('sample-filename').innerText = filename;
+  document.getElementById('sample-meta').innerText = `${meta} • Ready to clone`;
+  const player = document.getElementById('sample-audio-player');
+  player.src = url;
+  document.getElementById('active-sample-card').classList.remove('hidden');
+
+  // Refresh sample list badges
+  const listEl = document.getElementById('samples-list');
+  const items = listEl.querySelectorAll('.sample-item');
+  items.forEach(item => {
+    const title = item.querySelector('.sample-item-info strong');
+    const btn = item.querySelector('button');
+    if (title && title.innerText === filename) {
+      item.classList.add('selected');
+      if (btn) {
+        btn.className = 'btn btn-sm btn-primary';
+        btn.innerText = '✓ Active';
+      }
+    } else {
+      item.classList.remove('selected');
+      if (btn) {
+        btn.className = 'btn btn-sm btn-secondary';
+        btn.innerText = 'Use Voice';
+      }
+    }
+  });
+
+  if (showToast) {
+    showStatus(`Voice "${filename}" is now active in "Clone My Voice"!`, 'info');
+    setTimeout(hideStatus, 3000);
+  }
 }
 
 // Upload Audio Sample
@@ -99,16 +172,9 @@ async function handleAudioUpload(file) {
 
     const data = await res.json();
     if (res.ok && data.status === 'success') {
-      uploadedSampleFilename = data.file.filename;
-      
-      // Update UI with uploaded sample
-      document.getElementById('sample-filename').innerText = data.file.filename;
-      document.getElementById('sample-meta').innerText = `${data.file.format} • ${data.file.size_mb} MB • Ready to clone`;
-      const player = document.getElementById('sample-audio-player');
-      player.src = data.file.url;
-      
-      document.getElementById('active-sample-card').classList.remove('hidden');
-      showStatus('Voice sample uploaded successfully! Ready to synthesize.', 'info');
+      selectSample(data.file.filename, data.file.url, `${data.file.size_mb} MB`, false);
+      await loadSamples();
+      showStatus('Voice sample saved and activated for cloning!', 'info');
       setTimeout(hideStatus, 4000);
     } else {
       showStatus(`Upload error: ${data.detail || 'Could not upload audio.'}`, 'error');
@@ -170,7 +236,7 @@ async function generateVoiceover() {
   }
 
   if (currentMode === 'clone' && !uploadedSampleFilename) {
-    showStatus('Please upload or record a voice sample first to clone your voice.', 'warning');
+    showStatus('Please select or upload a voice sample first to clone your voice.', 'warning');
     return;
   }
 
@@ -197,7 +263,6 @@ async function generateVoiceover() {
     const data = await res.json();
 
     if (data.status === 'success') {
-      // Show output player
       const outCard = document.getElementById('output-container');
       const outPlayer = document.getElementById('output-audio-player');
       const dlBtn = document.getElementById('download-btn');
