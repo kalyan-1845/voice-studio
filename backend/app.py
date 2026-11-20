@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import HOST, OUTPUT_DIR, PORT, STATIC_DIR, UPLOAD_DIR, get_hf_token, set_hf_token
-from .audio_utils import get_audio_info, save_uploaded_audio
+from .audio_utils import estimate_pitch, get_audio_info, pitch_shift_to_target, save_uploaded_audio, transcribe_audio_auto
 from .tts_engine import tts_engine
 
 app = FastAPI(
@@ -35,9 +35,9 @@ class GenerateRequest(BaseModel):
     sample_transcript: Optional[str] = ""
     script_text: str
     speed: float = 1.0
-    pitch: int = 0  # In Hz offset, e.g. -20 to +20
+    pitch: int = 0
     neural_voice: Optional[str] = "te-IN-MohanNeural"
-    remove_silence: bool = True
+    remove_silence: bool = False
 
 class TokenRequest(BaseModel):
     token: str
@@ -67,7 +67,8 @@ async def update_token(req: TokenRequest):
 @app.post("/api/upload-sample")
 async def upload_sample(file: UploadFile = File(...)):
     """
-    Receives user voice recording or file (WAV/MP3/M4A/OGG).
+    Receives user voice recording or file (WAV/MP3/M4A/OGG),
+    saves it, and automatically transcribes speech and detects vocal pitch.
     """
     try:
         content = await file.read()
@@ -84,7 +85,7 @@ async def upload_sample(file: UploadFile = File(...)):
 @app.get("/api/samples")
 async def list_samples():
     """
-    Lists uploaded voice samples sorted by newest first.
+    Lists uploaded voice samples sorted by newest first with pitch & transcript.
     """
     try:
         files = []
@@ -107,16 +108,12 @@ async def list_neural_voices():
     """
     return {
         "voices": [
-            # Telugu Voices
-            {"id": "te-IN-MohanNeural", "name": "Mohan (Telugu Male - Natural & Clear)", "gender": "Male", "lang": "Telugu"},
+            {"id": "te-IN-MohanNeural", "name": "Mohan (Telugu Male - Natural & Deep)", "gender": "Male", "lang": "Telugu"},
             {"id": "te-IN-ShrutiNeural", "name": "Shruti (Telugu Female - Expressive)", "gender": "Female", "lang": "Telugu"},
-            # Hindi Voices
-            {"id": "hi-IN-MadhurNeural", "name": "Madhur (Hindi Male - Natural & Fluent)", "gender": "Male", "lang": "Hindi"},
+            {"id": "hi-IN-MadhurNeural", "name": "Madhur (Hindi Male - Fluent & Natural)", "gender": "Male", "lang": "Hindi"},
             {"id": "hi-IN-SwaraNeural", "name": "Swara (Hindi Female - Expressive)", "gender": "Female", "lang": "Hindi"},
-            # Indian English Voices
-            {"id": "en-IN-PrabhatNeural", "name": "Prabhat (Indian English Male - Fluent)", "gender": "Male", "lang": "English (IN)"},
-            {"id": "en-IN-NeerjaNeural", "name": "Neerja (Indian English Female - Professional)", "gender": "Female", "lang": "English (IN)"},
-            # Global English Voices
+            {"id": "en-IN-PrabhatNeural", "name": "Prabhat (Indian English Male)", "gender": "Male", "lang": "English (IN)"},
+            {"id": "en-IN-NeerjaNeural", "name": "Neerja (Indian English Female)", "gender": "Female", "lang": "English (IN)"},
             {"id": "en-US-ChristopherNeural", "name": "Christopher (US Male - Warm Studio)", "gender": "Male", "lang": "English (US)"},
             {"id": "en-US-JennyNeural", "name": "Jenny (US Female - Clear)", "gender": "Female", "lang": "English (US)"},
             {"id": "en-GB-RyanNeural", "name": "Ryan (British Male - Articulate)", "gender": "Male", "lang": "English (UK)"}
@@ -126,16 +123,14 @@ async def list_neural_voices():
 @app.post("/api/generate")
 async def generate_speech(req: GenerateRequest):
     """
-    Generates speech using either cloned voice (F5-TTS cloud) or neural engine.
+    Generates speech using cloned voice or neural engine,
+    with automatic pitch-matching to reproduce the speaker's true voice tone.
     """
     if not req.script_text.strip():
         raise HTTPException(status_code=400, detail="Script text cannot be empty.")
 
-    # Rate format (+0%)
     rate_percent = int((req.speed - 1.0) * 100)
     rate_str = f"{'+' if rate_percent >= 0 else ''}{rate_percent}%"
-    
-    # Pitch format (+0Hz)
     pitch_str = f"{'+' if req.pitch >= 0 else ''}{req.pitch}Hz"
 
     if req.mode == "clone":
@@ -146,10 +141,18 @@ async def generate_speech(req: GenerateRequest):
         if not sample_path.exists():
             raise HTTPException(status_code=404, detail="Selected voice sample was not found.")
 
+        # If transcript not provided, auto-transcribe to prevent elderly/distorted hallucination
+        reference_text = req.sample_transcript.strip() if req.sample_transcript else ""
+        if not reference_text:
+            reference_text = transcribe_audio_auto(sample_path)
+
+        # Detect original target pitch
+        original_pitch = estimate_pitch(sample_path)
+
         # Attempt cloud voice clone
         success, result_path_or_msg, engine = await tts_engine.clone_voice_cloud(
             reference_audio_path=sample_path,
-            reference_text=req.sample_transcript or "",
+            reference_text=reference_text,
             target_text=req.script_text,
             remove_silence=req.remove_silence
         )
@@ -165,11 +168,15 @@ async def generate_speech(req: GenerateRequest):
             )
 
         output_file = Path(result_path_or_msg)
+
+        # Apply Automatic Pitch-Matching to eliminate flat/elderly voice drop
+        pitch_shift_to_target(output_file, original_pitch)
+
         return {
             "status": "success",
             "url": f"/api/audio/outputs/{output_file.name}",
             "filename": output_file.name,
-            "engine": engine
+            "engine": f"{engine} • Pitch Matched ({original_pitch:.0f} Hz)"
         }
     else:
         # Neural mode

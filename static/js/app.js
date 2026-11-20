@@ -28,7 +28,6 @@ function setupEventListeners() {
   const fileInput = document.getElementById('audio-input');
   const scriptArea = document.getElementById('script-text');
 
-  // File dropzone events
   dropzone.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropzone.classList.add('dragover');
@@ -211,7 +210,7 @@ async function handleAudioUpload(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  showStatus('Uploading voice sample...', 'info');
+  showStatus('Uploading & analyzing voice (auto-detecting pitch & speech)...', 'info');
 
   try {
     const res = await fetch('/api/upload-sample', {
@@ -222,8 +221,15 @@ async function handleAudioUpload(file) {
     const data = await res.json();
     if (res.ok && data.status === 'success') {
       selectSample(data.file.filename, data.file.url, `${data.file.size_mb} MB`, false);
+      
+      // Auto-populate transcript if speech recognized
+      if (data.file.transcript) {
+        document.getElementById('sample-transcript').value = data.file.transcript;
+      }
+      
       await loadSamples();
-      showStatus('Voice sample saved and activated for cloning!', 'info');
+      const pitchMsg = data.file.pitch_hz ? ` (Vocal pitch: ${data.file.pitch_hz} Hz)` : '';
+      showStatus(`Voice analyzed & calibrated${pitchMsg}! Ready to synthesize.`, 'info');
       setTimeout(hideStatus, 4000);
     } else {
       showStatus(`Upload error: ${data.detail || 'Could not upload audio.'}`, 'error');
@@ -326,10 +332,9 @@ async function generateVoiceover() {
       outCard.classList.remove('hidden');
       outPlayer.play().catch(() => {});
       loadHistory();
-      showStatus('Voiceover successfully synthesized!', 'info');
+      showStatus('Voiceover successfully synthesized and pitch-calibrated!', 'info');
       setTimeout(hideStatus, 4000);
     } else if (data.status === 'warning') {
-      // If ZeroGPU hit limit, give clear button to switch to Indian Neural
       showStatus(`${data.message}`, 'warning');
     } else {
       showStatus(`Synthesis error: ${data.detail || 'Generation failed'}`, 'error');
