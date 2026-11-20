@@ -91,14 +91,16 @@ async def list_neural_voices():
     """
     return {
         "voices": [
+            {"id": "hi-IN-MadhurNeural", "name": "Madhur (Hindi Male - Natural & Fluent)", "gender": "Male"},
+            {"id": "hi-IN-SwaraNeural", "name": "Swara (Hindi Female - Expressive)", "gender": "Female"},
             {"id": "en-US-ChristopherNeural", "name": "Christopher (US Male - Warm & Studio)", "gender": "Male"},
             {"id": "en-US-JennyNeural", "name": "Jenny (US Female - Natural & Clear)", "gender": "Female"},
-            {"id": "en-US-GuyNeural", "name": "Guy (US Male - Casual & Conversational)", "gender": "Male"},
-            {"id": "en-US-AriaNeural", "name": "Aria (US Female - Expressive & Professional)", "gender": "Female"},
-            {"id": "en-GB-RyanNeural", "name": "Ryan (British Male - Articulate)", "gender": "Male"},
-            {"id": "en-GB-SoniaNeural", "name": "Sonia (British Female - Calm)", "gender": "Female"},
+            {"id": "en-US-GuyNeural", "name": "Guy (US Male - Casual)", "gender": "Male"},
+            {"id": "en-US-AriaNeural", "name": "Aria (US Female - Expressive)", "gender": "Female"},
             {"id": "en-IN-PrabhatNeural", "name": "Prabhat (Indian English Male - Fluent)", "gender": "Male"},
             {"id": "en-IN-NeerjaNeural", "name": "Neerja (Indian English Female - Expressive)", "gender": "Female"},
+            {"id": "en-GB-RyanNeural", "name": "Ryan (British Male - Articulate)", "gender": "Male"},
+            {"id": "en-GB-SoniaNeural", "name": "Sonia (British Female - Calm)", "gender": "Female"},
             {"id": "en-AU-WilliamNeural", "name": "William (Australian Male)", "gender": "Male"}
         ]
     }
@@ -111,7 +113,6 @@ async def generate_speech(req: GenerateRequest):
     if not req.script_text.strip():
         raise HTTPException(status_code=400, detail="Script text cannot be empty.")
 
-    # Convert speed multiplier to percentage string for neural TTS
     rate_percent = int((req.speed - 1.0) * 100)
     rate_str = f"{'+' if rate_percent >= 0 else ''}{rate_percent}%"
 
@@ -136,7 +137,7 @@ async def generate_speech(req: GenerateRequest):
                 status_code=200,
                 content={
                     "status": "warning",
-                    "message": f"Cloud cloning space was busy: {result_path_or_msg}. Try again or switch to Neural studio voice.",
+                    "message": f"Cloud cloning space reported: {result_path_or_msg}. Try again or switch to Neural studio voice.",
                     "can_fallback": True
                 }
             )
