@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Studio | AI Voice Cloning & Studio Voiceover</title>
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-group">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+            <line x1="8" y1="22" x2="16" y2="22"></line>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Voice<span class="gradient-text">Studio</span></h1>
+          <p class="brand-subtitle">AI Zero-Shot Voice Clone & Neural Speech</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="status-indicator"></span>
+        <span class="status-text">Cloud Engine Ready</span>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="studio-workspace">
+      <!-- Left Panel: Voice Source -->
+      <section class="panel voice-panel">
+        <div class="panel-header">
+          <div class="step-badge">1</div>
+          <h2>Select Voice Source</h2>
+        </div>
+
+        <!-- Mode Tabs -->
+        <div class="tab-group">
+          <button class="tab-btn active" id="tab-clone" onclick="switchMode('clone')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            Clone My Voice
+          </button>
+          <button class="tab-btn" id="tab-neural" onclick="switchMode('neural')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+            </svg>
+            Studio Neural
+          </button>
+        </div>
+
+        <!-- Clone Voice Section -->
+        <div id="clone-section" class="mode-content">
+          <div class="upload-dropzone" id="dropzone">
+            <input type="file" id="audio-input" accept="audio/*" class="file-hidden">
+            <div class="dropzone-content">
+              <div class="upload-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+              </div>
+              <p class="dropzone-title">Drop your 20s–3min voice sample here</p>
+              <p class="dropzone-hint">WAV, MP3, M4A, or FLAC (Max 25MB)</p>
+              <div class="button-row">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('audio-input').click()">
+                  Browse File
+                </button>
+                <button type="button" class="btn btn-outline" id="record-btn" onclick="toggleRecording()">
+                  <span class="rec-dot"></span> <span id="record-text">Record Voice</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Sample Card -->
+          <div id="active-sample-card" class="sample-card hidden">
+            <div class="sample-info">
+              <div class="sample-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+              </div>
+              <div>
+                <p class="sample-filename" id="sample-filename">sample.wav</p>
+                <p class="sample-meta" id="sample-meta">Ready for zero-shot cloning</p>
+              </div>
+            </div>
+            <audio id="sample-audio-player" controls class="mini-player"></audio>
+          </div>
+
+          <!-- Transcript Reference (Optional) -->
+          <div class="form-group" style="margin-top: 1rem;">
+            <label for="sample-transcript">
+              Voice Sample Transcript <span class="label-opt">(Recommended for 100% clone fidelity)</span>
+            </label>
+            <textarea id="sample-transcript" class="input-text" rows="2" placeholder="What words did you speak in your voice sample? (e.g. 'Hello, this is my voice recording for testing.')"></textarea>
+          </div>
+        </div>
+
+        <!-- Neural Voice Section -->
+        <div id="neural-section" class="mode-content hidden">
+          <div class="form-group">
+            <label for="neural-voice-select">Choose High-Def Studio Voice</label>
+            <select id="neural-voice-select" class="input-select">
+              <option value="en-US-ChristopherNeural">Christopher (US Male - Warm & Studio)</option>
+              <option value="en-US-JennyNeural">Jenny (US Female - Natural & Clear)</option>
+              <option value="en-US-GuyNeural">Guy (US Male - Casual)</option>
+              <option value="en-US-AriaNeural">Aria (US Female - Expressive)</option>
+              <option value="en-IN-PrabhatNeural">Prabhat (Indian English Male - Fluent)</option>
+              <option value="en-IN-NeerjaNeural">Neerja (Indian English Female - Expressive)</option>
+              <option value="en-GB-RyanNeural">Ryan (British Male - Articulate)</option>
+              <option value="en-GB-SoniaNeural">Sonia (British Female - Calm)</option>
+            </select>
+          </div>
+          <div class="info-box">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span>Studio neural voices generate instantly with zero wait times and zero queue.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Script & Production -->
+      <section class="panel script-panel">
+        <div class="panel-header">
+          <div class="step-badge">2</div>
+          <h2>Script & Generation</h2>
+        </div>
+
+        <!-- Quick Template Chips -->
+        <div class="chip-container">
+          <span class="chip-label">Quick Presets:</span>
+          <button class="chip" onclick="applyPreset('intro')">YouTube Intro</button>
+          <button class="chip" onclick="applyPreset('tutorial')">Tutorial</button>
+          <button class="chip" onclick="applyPreset('podcast')">Podcast Clip</button>
+          <button class="chip" onclick="applyPreset('commercial')">Promo Ad</button>
+        </div>
+
+        <!-- Script Area -->
+        <div class="form-group">
+          <div class="label-row">
+            <label for="script-text">Voiceover Script</label>
+            <span class="char-count" id="script-counter">0 words | ~0s</span>
+          </div>
+          <textarea id="script-text" class="script-textarea" rows="7" placeholder="Type or paste the exact script you want to produce in your cloned voice..."></textarea>
+        </div>
+
+        <!-- Audio Settings -->
+        <div class="settings-grid">
+          <div class="setting-item">
+            <div class="label-row">
+              <label for="speed-slider">Speed</label>
+              <span id="speed-val">1.0x</span>
+            </div>
+            <input type="range" id="speed-slider" min="0.7" max="1.5" step="0.05" value="1.0" class="slider" oninput="updateSpeedVal(this.value)">
+          </div>
+          <div class="setting-item toggle-item">
+            <label for="remove-silence-chk">Auto Silence Trimmer</label>
+            <input type="checkbox" id="remove-silence-chk" checked class="checkbox-toggle">
+          </div>
+        </div>
+
+        <!-- Action Button -->
+        <button id="generate-btn" class="btn btn-primary btn-generate" onclick="generateVoiceover()">
+          <span class="btn-spinner hidden" id="gen-spinner"></span>
+          <span id="btn-text">✨ Generate Studio Voiceover</span>
+        </button>
+
+        <!-- Status Message Banner -->
+        <div id="status-banner" class="status-banner hidden"></div>
+
+        <!-- Output Player Area -->
+        <div id="output-container" class="output-card hidden">
+          <div class="output-header">
+            <div class="output-title-group">
+              <span class="success-dot"></span>
+              <h3>Voiceover Master Ready</h3>
+            </div>
+            <span class="engine-badge" id="output-engine">F5-TTS Cloud</span>
+          </div>
+
+          <audio id="output-audio-player" controls class="main-player"></audio>
+
+          <div class="output-actions">
+            <a id="download-btn" class="btn btn-secondary" download="voiceover_master.wav" href="#">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Download Master Audio
+            </a>
+            <button class="btn btn-outline" onclick="copyShareLink()">
+              Copy Audio URL
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Panel: Production History -->
+    <section class="panel history-panel">
+      <div class="panel-header">
+        <h2>Production Library</h2>
+        <button class="btn btn-sm btn-ghost" onclick="loadHistory()">Refresh Library</button>
+      </div>
+      <div id="history-list" class="history-grid">
+        <p class="empty-state">No voice clips generated yet. Create your first master voiceover above!</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
