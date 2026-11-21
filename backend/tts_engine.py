@@ -58,6 +58,13 @@ class TTSEngine:
     def __init__(self):
         self._custom_client: Optional[Client] = None
         self._cached_custom_url: Optional[str] = None
+        self._clients: dict = {}
+
+    def _get_hf_client(self, space_name: str, token: Optional[str]) -> Client:
+        cache_key = f"{space_name}::{token or 'guest'}"
+        if cache_key not in self._clients:
+            self._clients[cache_key] = Client(space_name, token=token)
+        return self._clients[cache_key]
 
     def _get_custom_gpu_client(self) -> Optional[Client]:
         url = get_cloud_gpu_url()
@@ -95,7 +102,7 @@ class TTSEngine:
                     remove_silence
                 )
 
-            res = await loop.run_in_executor(None, _run)
+            res = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=30.0)
             out_file = res[0] if isinstance(res, (list, tuple)) else res
             if out_file and os.path.exists(str(out_file)):
                 return True, str(out_file)
@@ -129,10 +136,9 @@ class TTSEngine:
             for token_attempt in attempts:
                 try:
                     def _call():
-                        c = Client(space_name, token=token_attempt)
+                        c = self._get_hf_client(space_name, token_attempt)
                         audio_handle = handle_file(str(ref_audio_path))
                         
-                        # Handle space-specific endpoint schemas
                         if "abidlabs" in space_name:
                             return c.predict(
                                 ref_audio_orig=audio_handle,
@@ -152,15 +158,18 @@ class TTSEngine:
                                 api_name="/predict"
                             )
 
-                    res = await loop.run_in_executor(None, _call)
+                    # Maximum 45s wait per space to avoid long public queues
+                    res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=45.0)
                     out_file = res[0] if isinstance(res, (list, tuple)) else res
                     if out_file and os.path.exists(str(out_file)):
                         engine_name = f"Cloud F5-TTS ({space_name.split('/')[0]})"
                         return True, str(out_file), engine_name
+                except asyncio.TimeoutError:
+                    last_error = f"Public queue on {space_name} timed out after 45s."
+                    continue
                 except Exception as e:
                     err_msg = str(e)
                     last_error = err_msg
-                    # If quota or rate limit, continue to next attempt or space
                     continue
 
         return False, None, last_error or "Cloud voice cloning failed across all pool spaces"
