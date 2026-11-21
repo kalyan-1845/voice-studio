@@ -107,6 +107,13 @@ async function saveCloudGpuUrl() {
   }
 }
 
+function copyColabCode() {
+  const code = document.getElementById('colab-code-box').innerText;
+  navigator.clipboard.writeText(code);
+  showStatus('Colab GPU code copied to clipboard! Paste it into a cell in your Colab notebook and run.', 'info');
+  setTimeout(hideStatus, 4000);
+}
+
 // Token Management
 async function checkTokenStatus() {
   try {
@@ -448,7 +455,7 @@ async function generateVoiceover() {
       showStatus(`Synthesis Error: ${msg}`, 'error');
     }
   } catch (err) {
-    showStatus(`Connection error: ${err.message}`, 'error');
+    showStatus('Cloud space timed out. Connect your free Colab GPU (click ⚡ Cloud GPU in header) or use Indian Studio Neural for instant 0.8s generation!', 'error');
   } finally {
     setGeneratingState(false);
   }

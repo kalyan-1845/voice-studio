@@ -158,14 +158,14 @@ class TTSEngine:
                                 api_name="/predict"
                             )
 
-                    # Maximum 45s wait per space to avoid long public queues
-                    res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=45.0)
+                    # Quick 15s wait per public space to fail fast if queue is blocked
+                    res = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=15.0)
                     out_file = res[0] if isinstance(res, (list, tuple)) else res
                     if out_file and os.path.exists(str(out_file)):
                         engine_name = f"Cloud F5-TTS ({space_name.split('/')[0]})"
                         return True, str(out_file), engine_name
                 except asyncio.TimeoutError:
-                    last_error = f"Public queue on {space_name} timed out after 45s."
+                    last_error = f"Public queue on {space_name} busy (timed out after 15s)."
                     continue
                 except Exception as e:
                     err_msg = str(e)
