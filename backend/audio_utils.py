@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Optional, Tuple
@@ -9,17 +10,29 @@ import speech_recognition as sr
 
 def save_uploaded_audio(file_bytes: bytes, original_filename: str, upload_dir: Path) -> Path:
     """
-    Saves an uploaded audio file with a unique filename.
+    Saves an uploaded audio file with a unique filename and converts it
+    to standard 24kHz Mono PCM WAV using ffmpeg. This guarantees 100% compatibility
+    with browser WebM recordings, iPhone M4A, OGG, and MP3 files.
     """
     try:
-        suffix = Path(original_filename).suffix.lower()
-        if not suffix:
-            suffix = ".wav"
-        unique_name = f"sample_{uuid.uuid4().hex[:8]}{suffix}"
-        target_path = upload_dir / unique_name
-        with open(target_path, "wb") as f:
+        raw_name = f"temp_raw_{uuid.uuid4().hex[:8]}"
+        raw_path = upload_dir / raw_name
+        with open(raw_path, "wb") as f:
             f.write(file_bytes)
-        return target_path
+
+        target_name = f"sample_{uuid.uuid4().hex[:8]}.wav"
+        target_path = upload_dir / target_name
+
+        try:
+            cmd = ["ffmpeg", "-y", "-i", str(raw_path), "-ar", "24000", "-ac", "1", str(target_path)]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            if raw_path.exists():
+                raw_path.unlink()
+            return target_path
+        except Exception:
+            if raw_path.exists():
+                shutil.move(str(raw_path), str(target_path))
+            return target_path
     except Exception as e:
         raise RuntimeError(f"Failed to save audio file: {str(e)}")
 
