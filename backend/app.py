@@ -7,14 +7,29 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .config import HOST, OUTPUT_DIR, PORT, STATIC_DIR, UPLOAD_DIR, get_hf_token, set_hf_token
-from .audio_utils import estimate_pitch, get_audio_info, pitch_shift_to_target, save_uploaded_audio, transcribe_audio_auto
+from .config import (
+    HOST,
+    OUTPUT_DIR,
+    PORT,
+    STATIC_DIR,
+    UPLOAD_DIR,
+    get_cloud_gpu_url,
+    get_hf_token,
+    set_cloud_gpu_url,
+    set_hf_token
+)
+from .audio_utils import (
+    estimate_pitch,
+    get_audio_info,
+    save_uploaded_audio,
+    transcribe_audio_file
+)
 from .tts_engine import tts_engine
 
 app = FastAPI(
     title="AI Voice Studio",
     description="Zero-shot voice cloning & studio voiceover platform",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # CORS support
@@ -43,6 +58,9 @@ class GenerateRequest(BaseModel):
 class TokenRequest(BaseModel):
     token: str
 
+class CloudGpuRequest(BaseModel):
+    url: str
+
 @app.get("/")
 async def serve_index():
     index_file = STATIC_DIR / "index.html"
@@ -53,17 +71,45 @@ async def serve_index():
 @app.get("/api/health")
 async def health_check():
     has_token = bool(get_hf_token())
-    return {"status": "online", "engine": "Voice Studio Active", "has_hf_token": has_token}
+    cloud_url = get_cloud_gpu_url()
+    return {
+        "status": "online",
+        "engine": "Voice Studio Active",
+        "has_hf_token": has_token,
+        "has_cloud_gpu": bool(cloud_url),
+        "cloud_gpu_url": cloud_url
+    }
 
 @app.get("/api/token")
 async def get_token_status():
     token = get_hf_token()
-    return {"has_token": bool(token), "masked_token": f"{token[:4]}...{token[-4:]}" if len(token) > 8 else ""}
+    return {
+        "has_token": bool(token),
+        "masked_token": f"{token[:4]}...{token[-4:]}" if len(token) > 8 else ""
+    }
 
 @app.post("/api/token")
 async def update_token(req: TokenRequest):
     set_hf_token(req.token)
     return {"status": "success", "message": "Hugging Face token updated successfully!"}
+
+@app.get("/api/cloud-gpu")
+async def get_cloud_gpu():
+    url = get_cloud_gpu_url()
+    return {
+        "connected": bool(url),
+        "url": url
+    }
+
+@app.post("/api/cloud-gpu")
+async def set_cloud_gpu(req: CloudGpuRequest):
+    set_cloud_gpu_url(req.url.strip())
+    return {
+        "status": "success",
+        "message": "Cloud GPU URL updated successfully!",
+        "connected": bool(req.url.strip()),
+        "url": req.url.strip()
+    }
 
 @app.post("/api/upload-sample")
 async def upload_sample(file: UploadFile = File(...)):
@@ -78,25 +124,30 @@ async def upload_sample(file: UploadFile = File(...)):
         
         saved_path = save_uploaded_audio(content, file.filename or "voice_sample.wav", UPLOAD_DIR)
         info = get_audio_info(saved_path)
-        info["url"] = f"/api/audio/uploads/{saved_path.name}"
-        return JSONResponse(content={"status": "success", "file": info})
+
+        return {
+            "status": "success",
+            "filename": saved_path.name,
+            "url": f"/api/audio/uploads/{saved_path.name}",
+            "info": info
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/samples")
 async def list_samples():
     """
-    Lists uploaded voice samples sorted by newest first with pitch & transcript.
+    Lists all saved voice samples in uploads directory.
     """
     try:
         files = []
-        for file_path in sorted(UPLOAD_DIR.glob("*.*"), key=os.path.getmtime, reverse=True):
-            if file_path.suffix.lower() in [".wav", ".mp3", ".ogg", ".m4a", ".flac"] and file_path.name != ".gitkeep":
+        for f in sorted(UPLOAD_DIR.glob("*.*"), key=os.path.getmtime, reverse=True):
+            if f.is_file() and f.name != ".gitkeep" and not f.name.startswith("temp_") and not f.name.startswith("slice_"):
                 files.append({
-                    "filename": file_path.name,
-                    "url": f"/api/audio/uploads/{file_path.name}",
-                    "size_mb": round(os.path.getsize(file_path) / (1024 * 1024), 2),
-                    "created_at": file_path.stat().st_mtime
+                    "filename": f.name,
+                    "url": f"/api/audio/uploads/{f.name}",
+                    "size_mb": round(os.path.getsize(f) / (1024 * 1024), 2),
+                    "created_at": os.path.getmtime(f)
                 })
         return {"samples": files}
     except Exception as e:
@@ -111,6 +162,10 @@ async def delete_sample(filename: str):
         target = UPLOAD_DIR / filename
         if target.exists() and target.is_file() and target.name != ".gitkeep":
             target.unlink()
+            # Also clean up any associated slice
+            slice_path = UPLOAD_DIR / f"slice_{target.stem}.wav"
+            if slice_path.exists():
+                slice_path.unlink()
             return {"status": "success", "message": f"Deleted {filename}"}
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as e:
@@ -153,8 +208,8 @@ async def list_neural_voices():
 @app.post("/api/generate")
 async def generate_speech(req: GenerateRequest):
     """
-    Generates speech supporting full paragraphs with zero failure rate.
-    If cloud ZeroGPU limits occur, it automatically falls back to vocal pitch matching.
+    Generates speech supporting full paragraphs.
+    Produces pristine voice cloning with zero artificial pitch-vocoder degradation.
     """
     if not req.script_text.strip():
         raise HTTPException(status_code=400, detail="Script text cannot be empty.")
@@ -180,60 +235,31 @@ async def generate_speech(req: GenerateRequest):
         if not sample_path.exists():
             raise HTTPException(status_code=404, detail="Selected voice sample was not found.")
 
-        # Reference transcript lookup / auto-transcribe
-        reference_text = req.sample_transcript.strip() if req.sample_transcript else ""
-        if not reference_text:
-            reference_text = transcribe_audio_auto(sample_path)
-
-        # Detect original target pitch
-        original_pitch = estimate_pitch(sample_path)
-
-        # Multi-paragraph voice cloning with sentence chunking & natural pacing
+        # Multi-paragraph zero-shot voice cloning with sentence chunking
         success, result_path_or_msg, engine = await tts_engine.clone_voice_cloud(
             reference_audio_path=sample_path,
-            reference_text=reference_text,
+            reference_text=req.sample_transcript or "",
             target_text=req.script_text,
             remove_silence=req.remove_silence,
             style=req.style
         )
 
         if not success:
-            # Automatic intelligent fallback: Generate paragraph with calibrated neural voice
-            # matching user's original pitch so user's text NEVER fails to generate!
-            fallback_voice = "en-IN-PrabhatNeural"
-            if any(ord(c) >= 0x0c00 and ord(c) <= 0x0c7f for c in req.script_text):
-                fallback_voice = "te-IN-MohanNeural"
-            elif any(ord(c) >= 0x0900 and ord(c) <= 0x097f for c in req.script_text):
-                fallback_voice = "hi-IN-MadhurNeural"
-
-            fb_success, fb_path, _ = await tts_engine.generate_neural_tts(
-                text=req.script_text,
-                voice=fallback_voice,
-                rate=rate_str,
-                pitch=f"{'+' if total_pitch >= 0 else ''}{total_pitch}Hz"
-            )
-            
-            if fb_success:
-                fb_file = Path(fb_path)
-                pitch_shift_to_target(fb_file, original_pitch, style=req.style)
-                return {
-                    "status": "success",
-                    "url": f"/api/audio/outputs/{fb_file.name}",
-                    "filename": fb_file.name,
-                    "engine": f"Neural Fallback (Pitch Calibrated {original_pitch:.0f} Hz)",
-                    "note": "Hugging Face ZeroGPU was temporarily throttled; synthesized using calibrated neural engine."
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": result_path_or_msg,
+                    "tip": "Tip: You can connect your free Google Colab NVIDIA GPU in 1 click for instant unlimited cloning!"
                 }
-            else:
-                return JSONResponse(status_code=200, content={"status": "warning", "message": result_path_or_msg})
+            )
 
         output_file = Path(result_path_or_msg)
-        pitch_shift_to_target(output_file, original_pitch, style=req.style)
-
         return {
             "status": "success",
             "url": f"/api/audio/outputs/{output_file.name}",
             "filename": output_file.name,
-            "engine": f"{engine} • Pitch Calibrated ({original_pitch:.0f} Hz) • {req.style.capitalize()}"
+            "engine": f"{engine} • {req.style.capitalize()}"
         }
     else:
         # Neural mode
@@ -258,43 +284,52 @@ async def generate_speech(req: GenerateRequest):
 @app.get("/api/audio/{folder}/{filename}")
 async def get_audio_file(folder: str, filename: str):
     """
-    Safely serves audio files.
+    Streams audio files securely from uploads or outputs.
     """
-    if folder not in ["uploads", "outputs"]:
-        raise HTTPException(status_code=400, detail="Invalid folder.")
-    
-    target_dir = UPLOAD_DIR if folder == "uploads" else OUTPUT_DIR
-    target_path = target_dir / filename
-    
-    if not target_path.exists() or not target_path.is_file():
+    if folder == "uploads":
+        file_path = UPLOAD_DIR / filename
+    elif folder == "outputs":
+        file_path = OUTPUT_DIR / filename
+    else:
+        raise HTTPException(status_code=400, detail="Invalid folder specified.")
+
+    if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Audio file not found.")
-    
-    media_type = "audio/wav" if target_path.suffix.lower() == ".wav" else "audio/mpeg"
-    return FileResponse(str(target_path), media_type=media_type)
+
+    suffix = file_path.suffix.lower()
+    media_type = "audio/wav"
+    if suffix == ".mp3":
+        media_type = "audio/mpeg"
+    elif suffix in [".m4a", ".mp4"]:
+        media_type = "audio/mp4"
+    elif suffix == ".ogg":
+        media_type = "audio/ogg"
+
+    return FileResponse(str(file_path), media_type=media_type)
 
 @app.get("/api/history")
 async def get_history():
     """
-    Returns list of recently generated voiceovers.
+    Returns list of generated voiceover files.
     """
     try:
         items = []
-        for file_path in sorted(OUTPUT_DIR.glob("*.*"), key=os.path.getmtime, reverse=True):
-            if file_path.suffix.lower() in [".wav", ".mp3", ".ogg"] and file_path.name != ".gitkeep":
+        for f in sorted(OUTPUT_DIR.glob("*.*"), key=os.path.getmtime, reverse=True):
+            if f.is_file() and f.name != ".gitkeep":
                 items.append({
-                    "filename": file_path.name,
-                    "url": f"/api/audio/outputs/{file_path.name}",
-                    "created_at": file_path.stat().st_mtime,
-                    "size_mb": round(os.path.getsize(file_path) / (1024 * 1024), 2)
+                    "filename": f.name,
+                    "url": f"/api/audio/outputs/{f.name}",
+                    "size_mb": round(os.path.getsize(f) / (1024 * 1024), 2),
+                    "created_at": os.path.getmtime(f)
                 })
-        return {"history": items[:25]}
+        return {"history": items}
     except Exception as e:
-        return {"history": [], "error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/history/{filename}")
 async def delete_history_item(filename: str):
     """
-    Deletes a single output voiceover clip.
+    Deletes an individual generated audio file from the production library.
     """
     try:
         target = OUTPUT_DIR / filename
@@ -308,7 +343,7 @@ async def delete_history_item(filename: str):
 @app.delete("/api/history")
 async def clear_all_history():
     """
-    Clears all output voiceover clips from Production Library.
+    Clears all generated audio files from the production library.
     """
     try:
         count = 0
@@ -316,10 +351,6 @@ async def clear_all_history():
             if f.is_file() and f.name != ".gitkeep":
                 f.unlink()
                 count += 1
-        return {"status": "success", "message": f"Deleted {count} output clips."}
+        return {"status": "success", "message": f"Deleted {count} generated files."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("backend.app:app", host=HOST, port=PORT, reload=True)

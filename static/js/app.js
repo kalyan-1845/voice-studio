@@ -16,6 +16,7 @@ const SCRIPT_PRESETS = {
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  checkCloudGpuStatus();
   checkTokenStatus();
   loadSamples();
   loadHistory();
@@ -53,6 +54,59 @@ function setupEventListeners() {
   scriptArea.addEventListener('input', updateWordCount);
 }
 
+// Cloud GPU Management
+async function checkCloudGpuStatus() {
+  try {
+    const res = await fetch('/api/cloud-gpu');
+    const data = await res.json();
+    const statusText = document.getElementById('gpu-status-text');
+    const pulse = document.getElementById('gpu-pulse');
+    const urlInput = document.getElementById('cloud-gpu-url-input');
+
+    if (data.connected && data.url) {
+      statusText.innerText = '⚡ Dedicated GPU Connected';
+      if (pulse) pulse.style.background = '#10b981';
+      if (urlInput) urlInput.value = data.url;
+    } else {
+      statusText.innerText = '⚡ Cloud GPU: Auto Pool';
+      if (pulse) pulse.style.background = '#38bdf8';
+    }
+  } catch (err) {
+    console.error('Failed to check GPU status:', err);
+  }
+}
+
+function toggleGpuModal() {
+  const modal = document.getElementById('gpu-modal');
+  modal.classList.toggle('hidden');
+}
+
+async function saveCloudGpuUrl() {
+  const urlInput = document.getElementById('cloud-gpu-url-input');
+  const url = urlInput ? urlInput.value.trim() : '';
+
+  try {
+    const res = await fetch('/api/cloud-gpu', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toggleGpuModal();
+      checkCloudGpuStatus();
+      if (url) {
+        showStatus('Dedicated Cloud GPU connected successfully!', 'info');
+      } else {
+        showStatus('Switched to Auto Cloud Space Pool.', 'info');
+      }
+      setTimeout(hideStatus, 4000);
+    }
+  } catch (err) {
+    showStatus(`Failed to update Cloud GPU: ${err.message}`, 'error');
+  }
+}
+
 // Token Management
 async function checkTokenStatus() {
   try {
@@ -62,7 +116,7 @@ async function checkTokenStatus() {
     if (data.has_token) {
       btnText.innerText = `Token Connected (${data.masked_token})`;
     } else {
-      btnText.innerText = 'Add Free HF Token';
+      btnText.innerText = 'Cloud Token';
     }
   } catch (err) {
     console.error('Failed to check token:', err);
@@ -87,11 +141,10 @@ async function saveHfToken() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: token })
     });
-    const data = await res.json();
     if (res.ok) {
       toggleTokenModal();
       checkTokenStatus();
-      showStatus('Hugging Face Token saved successfully! ZeroGPU quota unlocked.', 'info');
+      showStatus('Hugging Face Token saved successfully!', 'info');
       setTimeout(hideStatus, 4000);
     }
   } catch (err) {
@@ -157,9 +210,9 @@ async function loadSamples() {
             <audio controls src="${s.url}" class="sample-item-player"></audio>
             <div class="sample-item-actions">
               <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-secondary'}" onclick="selectSample('${s.filename}', '${s.url}', '${s.size_mb} MB', true)">
-                ${isSelected ? '✓ Active' : 'Use'}
+                ${isSelected ? '✓ Active' : 'Use Voice'}
               </button>
-              <button class="btn btn-sm btn-danger-ghost" title="Delete voice sample" onclick="deleteSample('${s.filename}')">
+              <button class="btn btn-sm btn-danger-ghost" title="Delete voice profile" onclick="deleteSample('${s.filename}')">
                 🗑️
               </button>
             </div>
@@ -203,7 +256,6 @@ async function clearAllSamples() {
 
   try {
     const res = await fetch('/api/samples', { method: 'DELETE' });
-    const data = await res.json();
     if (res.ok) {
       removeActiveVoice();
       await loadSamples();
@@ -247,7 +299,7 @@ function selectSample(filename, url, meta, showToast = true) {
       item.classList.remove('selected');
       if (useBtn) {
         useBtn.className = 'btn btn-sm btn-secondary';
-        useBtn.innerText = 'Use';
+        useBtn.innerText = 'Use Voice';
       }
     }
   });
@@ -263,7 +315,7 @@ async function handleAudioUpload(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  showStatus('Uploading & analyzing voice (auto-detecting pitch & speech)...', 'info');
+  showStatus('Uploading & analyzing voice...', 'info');
 
   try {
     const res = await fetch('/api/upload-sample', {
@@ -273,15 +325,16 @@ async function handleAudioUpload(file) {
 
     const data = await res.json();
     if (res.ok && data.status === 'success') {
-      selectSample(data.file.filename, data.file.url, `${data.file.size_mb} MB`, false);
+      const sizeMb = data.info ? `${data.info.size_mb} MB` : 'Audio File';
+      selectSample(data.filename, data.url, sizeMb, false);
       
-      if (data.file.transcript) {
-        document.getElementById('sample-transcript').value = data.file.transcript;
+      if (data.info && data.info.transcript) {
+        document.getElementById('sample-transcript').value = data.info.transcript;
       }
       
       await loadSamples();
-      const pitchMsg = data.file.pitch_hz ? ` (Vocal pitch: ${data.file.pitch_hz} Hz)` : '';
-      showStatus(`Voice analyzed & calibrated${pitchMsg}! Ready to synthesize.`, 'info');
+      const pitchMsg = (data.info && data.info.pitch_hz) ? ` (Pitch: ${data.info.pitch_hz} Hz)` : '';
+      showStatus(`Voice profile loaded successfully${pitchMsg}! Ready to clone.`, 'info');
       setTimeout(hideStatus, 4000);
     } else {
       showStatus(`Upload error: ${data.detail || 'Could not upload audio.'}`, 'error');
@@ -372,7 +425,7 @@ async function generateVoiceover() {
 
     const data = await res.json();
 
-    if (data.status === 'success') {
+    if (res.ok && data.status === 'success') {
       const outCard = document.getElementById('output-container');
       const outPlayer = document.getElementById('output-audio-player');
       const dlBtn = document.getElementById('download-btn');
@@ -388,13 +441,11 @@ async function generateVoiceover() {
       outPlayer.play().catch(() => {});
       loadHistory();
       
-      const note = data.note ? ` (${data.note})` : '';
-      showStatus(`Voiceover successfully synthesized!${note}`, 'info');
+      showStatus('Voiceover successfully synthesized!', 'info');
       setTimeout(hideStatus, 5000);
-    } else if (data.status === 'warning') {
-      showStatus(`${data.message}`, 'warning');
     } else {
-      showStatus(`Synthesis error: ${data.detail || 'Generation failed'}`, 'error');
+      const msg = data.message || data.detail || 'Generation failed';
+      showStatus(`Synthesis Error: ${msg}`, 'error');
     }
   } catch (err) {
     showStatus(`Connection error: ${err.message}`, 'error');
@@ -410,7 +461,7 @@ function setGeneratingState(isGenerating) {
 
   btn.disabled = isGenerating;
   spinner.classList.toggle('hidden', !isGenerating);
-  btnText.innerText = isGenerating ? 'Synthesizing Paragraphs...' : '✨ Generate Studio Voiceover';
+  btnText.innerText = isGenerating ? 'Synthesizing Voiceover...' : '✨ Generate Studio Voiceover';
 }
 
 function showStatus(msg, type = 'info') {
@@ -468,9 +519,10 @@ async function loadHistory() {
             <span style="color: var(--text-dim);">${item.size_mb} MB</span>
           </div>
           <audio controls src="${item.url}" class="mini-player"></audio>
-          <div style="display: flex; justify-content: flex-end; gap: 0.5rem; align-items: center;">
-            <a href="${item.url}" download="${item.filename}" class="btn btn-ghost" style="font-size: 0.75rem;">Download</a>
-            <button class="btn btn-danger-ghost" style="font-size: 0.75rem;" onclick="deleteHistoryItem('${item.filename}')">🗑️ Delete</button>
+          <div class="history-card-actions">
+            <a href="${item.url}" download="${item.filename}" class="btn btn-sm btn-secondary" style="font-size: 0.75rem;">⬇️ Download</a>
+            <button class="btn btn-sm btn-outline" style="font-size: 0.75rem;" onclick="copyHistoryLink('${item.url}')">📋 Copy</button>
+            <button class="btn btn-sm btn-danger-outline" style="font-size: 0.75rem;" onclick="deleteHistoryItem('${item.filename}')">🗑️ Delete Clip</button>
           </div>
         </div>
       `).join('');
@@ -480,6 +532,13 @@ async function loadHistory() {
   } catch (err) {
     console.error('History load error:', err);
   }
+}
+
+function copyHistoryLink(url) {
+  const fullUrl = window.location.origin + url;
+  navigator.clipboard.writeText(fullUrl);
+  showStatus('Audio link copied to clipboard!', 'info');
+  setTimeout(hideStatus, 3000);
 }
 
 // Delete single history clip

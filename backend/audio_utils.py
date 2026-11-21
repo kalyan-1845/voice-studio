@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Optional, Tuple
 import numpy as np
 import soundfile as sf
-import librosa
 import speech_recognition as sr
 
 def save_uploaded_audio(file_bytes: bytes, original_filename: str, upload_dir: Path) -> Path:
@@ -53,12 +52,12 @@ def estimate_pitch(file_path: Path) -> float:
     except Exception:
         return 180.0
 
-def transcribe_audio_auto(file_path: Path) -> str:
+def transcribe_audio_file(file_path: Path) -> str:
     """
-    Automatically detects and transcribes speech in Hindi, Telugu, or English.
+    Transcribes audio speech in Indian English, Hindi, or Telugu.
     """
     try:
-        temp_wav = file_path.parent / f"temp_{uuid.uuid4().hex[:6]}.wav"
+        temp_wav = file_path.parent / f"temp_rec_{uuid.uuid4().hex[:6]}.wav"
         data, sr_rate = sf.read(str(file_path))
         if data.ndim > 1:
             data = data.mean(axis=1)
@@ -69,7 +68,7 @@ def transcribe_audio_auto(file_path: Path) -> str:
             audio = r.record(source)
 
         transcription = ""
-        for lang in ['hi-IN', 'te-IN', 'en-IN', 'en-US']:
+        for lang in ['en-IN', 'hi-IN', 'te-IN', 'en-US']:
             try:
                 transcription = r.recognize_google(audio, language=lang)
                 if transcription:
@@ -84,44 +83,34 @@ def transcribe_audio_auto(file_path: Path) -> str:
     except Exception:
         return ""
 
-def pitch_shift_to_target(audio_path: Path, target_pitch: float, style: str = "natural") -> Path:
+def get_optimal_reference_slice(
+    audio_path: Path,
+    target_duration_sec: float = 8.5
+) -> Tuple[Path, str]:
     """
-    Pitch-shifts the generated audio so its F0 matches the original speaker's target pitch,
-    incorporating delivery style adjustments (e.g. aggressive, calm).
+    Zero-shot models (F5-TTS, XTTS) require reference audio to be 5-10s.
+    This creates an exact 8.5s slice and transcribes that exact slice,
+    preventing any hallucination, cross-attention mismatch, or 2s truncations.
     """
     try:
-        # Style pitch adjustment
-        style_offset_hz = 0.0
-        if style == "aggressive":
-            style_offset_hz = 12.0
-        elif style == "calm":
-            style_offset_hz = -12.0
+        data, sr_rate = sf.read(str(audio_path))
+        if data.ndim > 1:
+            data = data.mean(axis=1)
 
-        effective_target = target_pitch + style_offset_hz
-        current_pitch = estimate_pitch(audio_path)
+        total_duration = len(data) / float(sr_rate)
+        if total_duration <= target_duration_sec:
+            slice_path = audio_path
+        else:
+            slice_samples = int(sr_rate * target_duration_sec)
+            slice_data = data[:slice_samples]
+            slice_filename = f"slice_{audio_path.stem}.wav"
+            slice_path = audio_path.parent / slice_filename
+            sf.write(str(slice_path), slice_data, sr_rate)
 
-        if current_pitch <= 0 or effective_target <= 0:
-            return audio_path
-
-        diff = abs(effective_target - current_pitch)
-        if diff > 10:
-            y, sr_rate = sf.read(str(audio_path))
-            n_steps = float(12 * np.log2(effective_target / current_pitch))
-            
-            # Bound shift to realistic bounds [-8 to +8 semitones]
-            n_steps = max(min(n_steps, 8.0), -8.0)
-            y_shifted = librosa.effects.pitch_shift(y, sr=sr_rate, n_steps=n_steps)
-            
-            # Peak normalize
-            max_val = np.max(np.abs(y_shifted))
-            if max_val > 0.01:
-                y_shifted = (y_shifted / max_val) * 0.92
-
-            sf.write(str(audio_path), y_shifted, sr_rate)
-        return audio_path
-    except Exception as e:
-        print(f"Pitch shift notice: {e}")
-        return audio_path
+        transcript = transcribe_audio_file(slice_path)
+        return slice_path, transcript
+    except Exception:
+        return audio_path, ""
 
 def get_audio_info(file_path: Path) -> dict:
     """
@@ -132,7 +121,7 @@ def get_audio_info(file_path: Path) -> dict:
             return {"exists": False}
         size_mb = round(os.path.getsize(file_path) / (1024 * 1024), 2)
         pitch = round(estimate_pitch(file_path), 1)
-        transcript = transcribe_audio_auto(file_path)
+        transcript = transcribe_audio_file(file_path)
 
         return {
             "exists": True,
