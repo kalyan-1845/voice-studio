@@ -283,7 +283,7 @@ function removeActiveVoice() {
 }
 
 // Select a sample to use for cloning
-function selectSample(filename, url, meta, showToast = true) {
+async function selectSample(filename, url, meta, showToast = true) {
   uploadedSampleFilename = filename;
   document.getElementById('sample-filename').innerText = filename;
   document.getElementById('sample-meta').innerText = `${meta} • Ready to clone`;
@@ -310,6 +310,19 @@ function selectSample(filename, url, meta, showToast = true) {
       }
     }
   });
+
+  // Fetch exact slice transcript for high-accuracy alignment
+  try {
+    const res = await fetch(`/api/samples/${filename}/info`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.info && data.info.transcript) {
+        document.getElementById('sample-transcript').value = data.info.transcript;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not auto-fetch sample transcript:', e);
+  }
 
   if (showToast) {
     showStatus(`Voice "${filename}" is now active in "Clone My Voice"!`, 'info');

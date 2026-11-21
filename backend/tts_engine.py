@@ -86,7 +86,10 @@ class TTSEngine:
         speed: float = 1.0,
         remove_silence: bool = False
     ) -> Tuple[bool, Optional[str]]:
-        """Calls user's dedicated Cloud GPU (Google Colab / RunPod / custom Gradio endpoint)."""
+        """
+        Calls user's dedicated Cloud GPU (Google Colab / RunPod / custom Gradio endpoint)
+        with Studio-grade 48 Euler ODE steps for ultra-clean vocal resolution.
+        """
         try:
             client = self._get_custom_gpu_client()
             if not client:
@@ -97,6 +100,7 @@ class TTSEngine:
 
             def _run():
                 try:
+                    # High-fidelity: nfe_slider=48 gives crisp high-frequency consonants and vocal huskiness
                     return client.predict(
                         ref_audio_input=audio_handle,
                         ref_text_input=ref_text or "",
@@ -105,7 +109,7 @@ class TTSEngine:
                         randomize_seed=True,
                         seed_input=0,
                         cross_fade_duration_slider=0.15,
-                        nfe_slider=32,
+                        nfe_slider=48,
                         speed_slider=speed,
                         api_name="/basic_tts"
                     )
@@ -129,7 +133,7 @@ class TTSEngine:
                             api_name="/infer"
                         )
 
-            res = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=90.0)
+            res = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=120.0)
             out_file = res[0] if isinstance(res, (list, tuple)) else res
             if out_file and os.path.exists(str(out_file)):
                 return True, str(out_file)
@@ -215,17 +219,20 @@ class TTSEngine:
         Produces pristine studio output with customizable pacing and breathing.
         """
         try:
-            # 1. Slice reference audio to optimal 8.5s + auto-transcribe slice if empty
+            # 1. Slice reference audio cleanly at natural silence pause + auto-transcribe slice
             optimal_ref, auto_slice_transcript = get_optimal_reference_slice(reference_audio_path, target_duration_sec=8.5)
-            effective_ref_text = reference_text.strip() if reference_text.strip() else auto_slice_transcript
+            
+            ref_clean = reference_text.strip()
+            # If user provided a custom transcript, use it; otherwise use the exact slice transcript
+            effective_ref_text = ref_clean if ref_clean else auto_slice_transcript
 
             # 2. Split target script into natural paragraph chunks
             chunks = split_text_into_chunks(target_text, max_chunk_words=30)
             if not chunks:
                 return False, "Target script is empty.", None
 
-            # 3. Inter-sentence breathing pause (350ms standard human speech cadence)
-            pause_ms = 350
+            # 3. Inter-sentence breathing pause (360ms standard human speech cadence)
+            pause_ms = 360
             if style == "aggressive":
                 pause_ms = 200
             elif style == "calm":

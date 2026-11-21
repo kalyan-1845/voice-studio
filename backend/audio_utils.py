@@ -83,14 +83,42 @@ def transcribe_audio_file(file_path: Path) -> str:
     except Exception:
         return ""
 
+def find_optimal_pause_boundary(data: np.ndarray, sr_rate: int, min_sec: float = 5.5, max_sec: float = 9.5) -> int:
+    """
+    Finds the exact low-energy silence/pause between words or sentences
+    between min_sec and max_sec. This prevents cutting words in half.
+    """
+    total_sec = len(data) / float(sr_rate)
+    if total_sec <= max_sec:
+        return len(data)
+
+    start_sample = int(min_sec * sr_rate)
+    end_sample = int(min(len(data), max_sec * sr_rate))
+
+    # Evaluate energy in 80ms windows, stepped every 20ms
+    window_size = int(0.08 * sr_rate)
+    step = int(0.02 * sr_rate)
+
+    min_energy = float('inf')
+    best_cut = int(8.0 * sr_rate)
+
+    for i in range(start_sample, end_sample - window_size, step):
+        frame = data[i : i + window_size]
+        energy = np.mean(frame ** 2)
+        if energy < min_energy:
+            min_energy = energy
+            best_cut = i + (window_size // 2)
+
+    return best_cut
+
 def get_optimal_reference_slice(
     audio_path: Path,
     target_duration_sec: float = 8.5
 ) -> Tuple[Path, str]:
     """
-    Zero-shot models (F5-TTS, XTTS) require reference audio to be 5-10s.
-    This creates an exact 8.5s slice and transcribes that exact slice,
-    preventing any hallucination, cross-attention mismatch, or 2s truncations.
+    Zero-shot models (F5-TTS, XTTS) require reference audio to be ~5-10s.
+    This creates an exact slice bounded at a natural silence/pause between words,
+    removes DC bias, normalizes peaks, and generates an exact matching transcript.
     """
     try:
         data, sr_rate = sf.read(str(audio_path))
@@ -98,14 +126,21 @@ def get_optimal_reference_slice(
             data = data.mean(axis=1)
 
         total_duration = len(data) / float(sr_rate)
-        if total_duration <= target_duration_sec:
-            slice_path = audio_path
+        if total_duration <= 9.5:
+            slice_data = data
         else:
-            slice_samples = int(sr_rate * target_duration_sec)
-            slice_data = data[:slice_samples]
-            slice_filename = f"slice_{audio_path.stem}.wav"
-            slice_path = audio_path.parent / slice_filename
-            sf.write(str(slice_path), slice_data, sr_rate)
+            cut_sample = find_optimal_pause_boundary(data, sr_rate, min_sec=5.5, max_sec=9.5)
+            slice_data = data[:cut_sample]
+
+        # Studio Audio Optimization: Remove DC offset & peak normalize for maximum vocal clarity
+        slice_data = slice_data - np.mean(slice_data) # Remove DC offset
+        max_v = np.max(np.abs(slice_data))
+        if max_v > 0.01:
+            slice_data = (slice_data / max_v) * 0.95
+
+        slice_filename = f"slice_{audio_path.stem}.wav"
+        slice_path = audio_path.parent / slice_filename
+        sf.write(str(slice_path), slice_data, sr_rate)
 
         transcript = transcribe_audio_file(slice_path)
         return slice_path, transcript
@@ -114,14 +149,19 @@ def get_optimal_reference_slice(
 
 def get_audio_info(file_path: Path) -> dict:
     """
-    Returns audio metadata including detected pitch and auto-transcription.
+    Returns audio metadata including detected pitch and auto-transcription
+    of the optimal reference slice.
     """
     try:
         if not file_path.exists():
             return {"exists": False}
         size_mb = round(os.path.getsize(file_path) / (1024 * 1024), 2)
         pitch = round(estimate_pitch(file_path), 1)
-        transcript = transcribe_audio_file(file_path)
+
+        # Generate optimal slice transcript to match exactly what F5-TTS receives
+        slice_path, slice_transcript = get_optimal_reference_slice(file_path)
+        data, sr_rate = sf.read(str(slice_path))
+        slice_duration = round(len(data) / float(sr_rate), 1)
 
         return {
             "exists": True,
@@ -129,7 +169,8 @@ def get_audio_info(file_path: Path) -> dict:
             "size_mb": size_mb,
             "format": file_path.suffix.replace(".", "").upper(),
             "pitch_hz": pitch,
-            "transcript": transcript
+            "slice_duration_sec": slice_duration,
+            "transcript": slice_transcript
         }
     except Exception as e:
         return {"exists": False, "error": str(e)}

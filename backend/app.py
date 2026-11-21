@@ -153,6 +153,22 @@ async def list_samples():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/samples/{filename}/info")
+async def get_sample_details(filename: str):
+    """
+    Returns audio details and slice transcription for a saved voice sample.
+    """
+    try:
+        target = UPLOAD_DIR / filename
+        if not target.exists() or not target.is_file():
+            raise HTTPException(status_code=404, detail="Sample not found")
+        info = get_audio_info(target)
+        return {"status": "success", "info": info}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/api/samples/{filename}")
 async def delete_sample(filename: str):
     """
