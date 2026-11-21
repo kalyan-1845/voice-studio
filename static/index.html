@@ -63,18 +63,8 @@
             In your Google Colab notebook (<strong>Runtime &gt; Change runtime type &gt; T4 GPU</strong>), paste and run this code:
           </p>
           <div style="position: relative; margin-top: 0.5rem;">
-            <pre style="background: rgba(0,0,0,0.5); padding: 0.8rem; border-radius: 8px; font-size: 0.75rem; color: #a5f3fc; overflow-x: auto; max-height: 140px;" id="colab-code-box">!pip install -q f5-tts gradio soundfile torch
-import gradio as gr, soundfile as sf
-from f5_tts.api import F5TTS
-f5 = F5TTS(model_type="F5-TTS", device="cuda")
-
-def clone(ref_audio, ref_text, gen_text, remove_silence=False):
-    wav, sr, _ = f5.infer(ref_file=ref_audio, ref_text=ref_text or "", gen_text=gen_text, remove_silence=remove_silence)
-    out = "/tmp/out.wav"
-    sf.write(out, wav, sr)
-    return out
-
-gr.Interface(fn=clone, inputs=[gr.Audio(type="filepath"), gr.Textbox(), gr.Textbox(), gr.Checkbox(value=False)], outputs=gr.Audio(type="filepath")).launch(share=True)</pre>
+            <pre style="background: rgba(0,0,0,0.5); padding: 0.8rem; border-radius: 8px; font-size: 0.85rem; color: #a5f3fc; overflow-x: auto;" id="colab-code-box">!pip install -q f5-tts gradio soundfile
+!f5-tts_infer-gradio --share</pre>
             <button class="btn btn-sm btn-outline" style="margin-top: 0.5rem; font-size: 0.75rem;" onclick="copyColabCode()">📋 Copy Colab Code</button>
           </div>
         </div>

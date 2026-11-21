@@ -95,12 +95,32 @@ class TTSEngine:
             audio_handle = handle_file(str(ref_audio_path))
 
             def _run():
-                return client.predict(
-                    audio_handle,
-                    ref_text or "",
-                    target_text,
-                    remove_silence
-                )
+                try:
+                    return client.predict(
+                        ref_audio=audio_handle,
+                        ref_text=ref_text or "",
+                        gen_text=target_text,
+                        remove_silence=remove_silence,
+                        api_name="/predict"
+                    )
+                except Exception:
+                    try:
+                        return client.predict(
+                            ref_audio_orig=audio_handle,
+                            ref_text=ref_text or "",
+                            gen_text=target_text,
+                            exp_name="F5-TTS",
+                            remove_silence=remove_silence,
+                            cross_fade_duration=0.15,
+                            api_name="/infer"
+                        )
+                    except Exception:
+                        return client.predict(
+                            audio_handle,
+                            ref_text or "",
+                            target_text,
+                            remove_silence
+                        )
 
             res = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=30.0)
             out_file = res[0] if isinstance(res, (list, tuple)) else res
