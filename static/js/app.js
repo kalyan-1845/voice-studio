@@ -1,15 +1,16 @@
 // AI Voice Studio Application Logic
 let currentMode = 'clone';
 let uploadedSampleFilename = null;
+let currentOutputFilename = null;
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 
-// Multi-Paragraph Presets (Telugu, Hindi, English)
+// Presets
 const SCRIPT_PRESETS = {
+  reading: "Reading books regularly is one of the best habits a person can build. It expands your vocabulary, sharpens your focus, and introduces you to new ideas and perspectives. Even a few pages a day can reduce stress and spark creativity by taking you into different worlds. Over time, consistent reading helps you think more clearly and communicate more effectively.",
   telugu_story: "నమస్కారం! నా పేరు కళ్యాణ్. ఆర్టిఫిషియల్ ఇంటెలిజెన్స్ మరియు వాయిస్ టెక్నాలజీతో మనం ఏదైనా సాధించవచ్చు. ఇది మన సొంత స్వరాన్ని ఖచ్చితంగా పోలి ఉంటుంది. ప్రతి వాక్యం ఎంతో స్పష్టంగా, సహజమైన గమనంతో వినిపిస్తుంది.",
-  hindi_story: "नमस्ते! मेरा नाम कल्याण है। आधुनिक तकनीक और एआई की मदद से हम अपनी आवाज़ को पूरी तरह से प्राकृतिक बना सकते हैं। यह बिना किसी रुकावट के बिल्कुल साफ़ और स्पष्ट सुनाई देती है। आप इसे किसी भी लंबे पैराग्राफ के लिए आसानी से इस्तेमाल कर सकते हैं।",
-  english_story: "Welcome to today's episode. Voice synthesis has evolved dramatically, allowing us to generate full paragraphs with natural pacing, clear pauses, and high vocal fidelity. Every sentence flows seamlessly without rushing or robotic artifacts."
+  hindi_story: "नमस्ते! मेरा नाम कल्याण है। आधुनिक तकनीक और एआई की मदद से हम अपनी आवाज़ को पूरी तरह से प्राकृतिक बना सकते हैं। यह बिना किसी रुकावट के बिल्कुल साफ़ और स्पष्ट सुनाई देती है।"
 };
 
 // Initialize
@@ -154,18 +155,72 @@ async function loadSamples() {
               <span>${s.size_mb} MB</span>
             </div>
             <audio controls src="${s.url}" class="sample-item-player"></audio>
-            <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-secondary'}" onclick="selectSample('${s.filename}', '${s.url}', '${s.size_mb} MB', true)">
-              ${isSelected ? '✓ Active' : 'Use Voice'}
-            </button>
+            <div class="sample-item-actions">
+              <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-secondary'}" onclick="selectSample('${s.filename}', '${s.url}', '${s.size_mb} MB', true)">
+                ${isSelected ? '✓ Active' : 'Use'}
+              </button>
+              <button class="btn btn-sm btn-danger-ghost" title="Delete voice sample" onclick="deleteSample('${s.filename}')">
+                🗑️
+              </button>
+            </div>
           </div>
         `;
       }).join('');
     } else {
       listEl.innerHTML = '<p class="empty-state-sm">No saved voice profiles yet. Record or upload one above!</p>';
+      removeActiveVoice();
     }
   } catch (err) {
     console.error('Failed to load voice samples:', err);
   }
+}
+
+// Delete a single voice sample
+async function deleteSample(filename) {
+  if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
+
+  try {
+    const res = await fetch(`/api/samples/${filename}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok) {
+      if (uploadedSampleFilename === filename) {
+        removeActiveVoice();
+      }
+      await loadSamples();
+      showStatus(`Deleted "${filename}" successfully.`, 'info');
+      setTimeout(hideStatus, 3000);
+    } else {
+      showStatus(`Delete failed: ${data.detail}`, 'error');
+    }
+  } catch (err) {
+    showStatus(`Network error deleting file: ${err.message}`, 'error');
+  }
+}
+
+// Clear all voice profiles
+async function clearAllSamples() {
+  if (!confirm('Are you sure you want to delete ALL saved voice profiles?')) return;
+
+  try {
+    const res = await fetch('/api/samples', { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok) {
+      removeActiveVoice();
+      await loadSamples();
+      showStatus('All voice profiles cleared.', 'info');
+      setTimeout(hideStatus, 3000);
+    }
+  } catch (err) {
+    showStatus(`Error clearing profiles: ${err.message}`, 'error');
+  }
+}
+
+// Remove active selected voice
+function removeActiveVoice() {
+  uploadedSampleFilename = null;
+  document.getElementById('sample-filename').innerText = '';
+  document.getElementById('active-sample-card').classList.add('hidden');
+  document.getElementById('sample-transcript').value = '';
 }
 
 // Select a sample to use for cloning
@@ -181,18 +236,18 @@ function selectSample(filename, url, meta, showToast = true) {
   const items = listEl.querySelectorAll('.sample-item');
   items.forEach(item => {
     const title = item.querySelector('.sample-item-info strong');
-    const btn = item.querySelector('button');
+    const useBtn = item.querySelector('.sample-item-actions button:first-child');
     if (title && title.innerText === filename) {
       item.classList.add('selected');
-      if (btn) {
-        btn.className = 'btn btn-sm btn-primary';
-        btn.innerText = '✓ Active';
+      if (useBtn) {
+        useBtn.className = 'btn btn-sm btn-primary';
+        useBtn.innerText = '✓ Active';
       }
     } else {
       item.classList.remove('selected');
-      if (btn) {
-        btn.className = 'btn btn-sm btn-secondary';
-        btn.innerText = 'Use Voice';
+      if (useBtn) {
+        useBtn.className = 'btn btn-sm btn-secondary';
+        useBtn.innerText = 'Use';
       }
     }
   });
@@ -220,7 +275,6 @@ async function handleAudioUpload(file) {
     if (res.ok && data.status === 'success') {
       selectSample(data.file.filename, data.file.url, `${data.file.size_mb} MB`, false);
       
-      // Auto-populate transcript if speech recognized
       if (data.file.transcript) {
         document.getElementById('sample-transcript').value = data.file.transcript;
       }
@@ -324,6 +378,7 @@ async function generateVoiceover() {
       const dlBtn = document.getElementById('download-btn');
       const engineBadge = document.getElementById('output-engine');
 
+      currentOutputFilename = data.filename;
       outPlayer.src = data.url;
       dlBtn.href = data.url;
       dlBtn.download = data.filename;
@@ -332,8 +387,10 @@ async function generateVoiceover() {
       outCard.classList.remove('hidden');
       outPlayer.play().catch(() => {});
       loadHistory();
-      showStatus('Voiceover successfully synthesized with natural sentence flow!', 'info');
-      setTimeout(hideStatus, 4000);
+      
+      const note = data.note ? ` (${data.note})` : '';
+      showStatus(`Voiceover successfully synthesized!${note}`, 'info');
+      setTimeout(hideStatus, 5000);
     } else if (data.status === 'warning') {
       showStatus(`${data.message}`, 'warning');
     } else {
@@ -353,7 +410,7 @@ function setGeneratingState(isGenerating) {
 
   btn.disabled = isGenerating;
   spinner.classList.toggle('hidden', !isGenerating);
-  btnText.innerText = isGenerating ? 'Synthesizing Paragraphs via Cloud...' : '✨ Generate Studio Voiceover';
+  btnText.innerText = isGenerating ? 'Synthesizing Paragraphs...' : '✨ Generate Studio Voiceover';
 }
 
 function showStatus(msg, type = 'info') {
@@ -376,6 +433,26 @@ function copyShareLink() {
   }
 }
 
+// Delete the currently displayed output
+async function deleteActiveOutput() {
+  if (!currentOutputFilename) return;
+  if (!confirm('Are you sure you want to delete this output file?')) return;
+
+  try {
+    const res = await fetch(`/api/history/${currentOutputFilename}`, { method: 'DELETE' });
+    if (res.ok) {
+      document.getElementById('output-container').classList.add('hidden');
+      document.getElementById('output-audio-player').src = '';
+      currentOutputFilename = null;
+      loadHistory();
+      showStatus('Master output deleted.', 'info');
+      setTimeout(hideStatus, 3000);
+    }
+  } catch (err) {
+    showStatus(`Error deleting output: ${err.message}`, 'error');
+  }
+}
+
 // Load Production History
 async function loadHistory() {
   const container = document.getElementById('history-list');
@@ -391,8 +468,9 @@ async function loadHistory() {
             <span style="color: var(--text-dim);">${item.size_mb} MB</span>
           </div>
           <audio controls src="${item.url}" class="mini-player"></audio>
-          <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+          <div style="display: flex; justify-content: flex-end; gap: 0.5rem; align-items: center;">
             <a href="${item.url}" download="${item.filename}" class="btn btn-ghost" style="font-size: 0.75rem;">Download</a>
+            <button class="btn btn-danger-ghost" style="font-size: 0.75rem;" onclick="deleteHistoryItem('${item.filename}')">🗑️ Delete</button>
           </div>
         </div>
       `).join('');
@@ -401,5 +479,37 @@ async function loadHistory() {
     }
   } catch (err) {
     console.error('History load error:', err);
+  }
+}
+
+// Delete single history clip
+async function deleteHistoryItem(filename) {
+  if (!confirm(`Delete "${filename}"?`)) return;
+
+  try {
+    const res = await fetch(`/api/history/${filename}`, { method: 'DELETE' });
+    if (res.ok) {
+      loadHistory();
+      showStatus(`Deleted clip "${filename}"`, 'info');
+      setTimeout(hideStatus, 3000);
+    }
+  } catch (err) {
+    showStatus(`Error deleting item: ${err.message}`, 'error');
+  }
+}
+
+// Clear all history clips
+async function clearAllHistory() {
+  if (!confirm('Are you sure you want to clear ALL clips from Production Library?')) return;
+
+  try {
+    const res = await fetch('/api/history', { method: 'DELETE' });
+    if (res.ok) {
+      loadHistory();
+      showStatus('Production library cleared.', 'info');
+      setTimeout(hideStatus, 3000);
+    }
+  } catch (err) {
+    showStatus(`Error clearing library: ${err.message}`, 'error');
   }
 }

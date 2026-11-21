@@ -14,15 +14,12 @@ from .config import DEFAULT_HF_SPACE, OUTPUT_DIR, get_hf_token
 
 def split_text_into_chunks(text: str, max_chunk_len: int = 150) -> List[str]:
     """
-    Splits long paragraphs into natural sentence chunks to ensure consistent 1.0x pacing
-    and prevent AI models from rushing, skipping, or hallucinating on long scripts.
-    Supports English (.?!), Hindi (।), Telugu, and punctuation.
+    Splits long paragraphs into natural sentence chunks to ensure consistent 1.0x pacing.
     """
     text = text.strip()
     if len(text) <= max_chunk_len:
         return [text]
 
-    # Split by major punctuation
     raw_sentences = re.split(r'([.?!।|;\n]+[\s]*)', text)
     chunks = []
     current_chunk = ""
@@ -39,6 +36,30 @@ def split_text_into_chunks(text: str, max_chunk_len: int = 150) -> List[str]:
         chunks.append(current_chunk.strip())
 
     return chunks if chunks else [text]
+
+def get_optimal_reference_slice(audio_path: Path, max_duration_sec: float = 10.0) -> Path:
+    """
+    F5-TTS requires reference audio to be between 3s and 12s.
+    If reference audio is longer than 12s (e.g. 60s), this extracts a clean 10s slice
+    to prevent F5-TTS from crashing, hallucinating, or truncating to 2s.
+    """
+    try:
+        info = sf.info(str(audio_path))
+        if info.duration <= max_duration_sec:
+            return audio_path
+
+        data, sr = sf.read(str(audio_path))
+        if data.ndim > 1:
+            data = data.mean(axis=1)
+
+        trimmed_len = int(sr * max_duration_sec)
+        slice_data = data[:trimmed_len]
+
+        trimmed_path = audio_path.parent / f"ref_trimmed_{audio_path.stem}.wav"
+        sf.write(str(trimmed_path), slice_data, sr)
+        return trimmed_path
+    except Exception:
+        return audio_path
 
 class TTSEngine:
     def __init__(self):
@@ -65,9 +86,12 @@ class TTSEngine:
         try:
             loop = asyncio.get_event_loop()
 
+            # Ensure reference audio is sliced to optimal 10s
+            optimal_ref = get_optimal_reference_slice(reference_audio_path, max_duration_sec=10.0)
+
             def _call_hf():
                 client = self._get_hf_client()
-                audio_file = handle_file(str(reference_audio_path))
+                audio_file = handle_file(str(optimal_ref))
                 return client.predict(
                     ref_audio=audio_file,
                     ref_text=reference_text if reference_text else "",
@@ -104,7 +128,6 @@ class TTSEngine:
         try:
             chunks = split_text_into_chunks(target_text)
             
-            # Determine pause between sentences based on style
             pause_ms = 220
             if style == "aggressive":
                 pause_ms = 140
@@ -123,9 +146,8 @@ class TTSEngine:
                 )
 
                 if not success or not chunk_file_path:
-                    # If cloud returns an error string, bubble it up
                     err_msg = chunk_file_path or "Cloud generation failed on chunk."
-                    return False, f"Cloud voice cloning error: {err_msg}", None
+                    return False, f"{err_msg}", None
 
                 data, sr_rate = sf.read(chunk_file_path)
                 if data.ndim > 1:
@@ -133,12 +155,11 @@ class TTSEngine:
                 target_sr = sr_rate
                 chunk_audio_arrays.append(data)
 
-                # Add natural pause between sentences (except after the final sentence)
+                # Add natural pause between sentences
                 if idx < len(chunks) - 1:
                     silence_samples = int(target_sr * (pause_ms / 1000.0))
                     chunk_audio_arrays.append(np.zeros(silence_samples, dtype=np.float32))
 
-            # Concatenate all sentence chunks seamlessly
             combined_audio = np.concatenate(chunk_audio_arrays)
 
             out_filename = f"cloned_{uuid.uuid4().hex[:8]}.wav"
@@ -152,7 +173,7 @@ class TTSEngine:
     async def generate_neural_tts(
         self,
         text: str,
-        voice: str = "te-IN-MohanNeural",
+        voice: str = "en-US-ChristopherNeural",
         rate: str = "+0%",
         pitch: str = "+0Hz"
     ) -> Tuple[bool, str, str]:

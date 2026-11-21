@@ -135,13 +135,19 @@
               </div>
             </div>
             <audio id="sample-audio-player" controls class="mini-player"></audio>
+            <div style="display: flex; justify-content: flex-end;">
+              <button class="btn btn-sm btn-danger-outline" onclick="removeActiveVoice()">✕ Unload Voice</button>
+            </div>
           </div>
 
-          <!-- Saved Voice Samples Library with "Use Voice" Button -->
+          <!-- Saved Voice Samples Library with Delete Buttons -->
           <div class="saved-samples-box">
             <div class="label-row" style="margin-bottom: 0.6rem;">
               <label>Saved Voice Profiles</label>
-              <button class="btn btn-sm btn-ghost" onclick="loadSamples()">Refresh</button>
+              <div style="display: flex; gap: 0.4rem;">
+                <button class="btn btn-sm btn-ghost" onclick="loadSamples()">Refresh</button>
+                <button class="btn btn-sm btn-danger-ghost" onclick="clearAllSamples()">Clear All</button>
+              </div>
             </div>
             <div id="samples-list" class="samples-list"></div>
           </div>
@@ -160,22 +166,20 @@
           <div class="form-group">
             <label for="neural-voice-select">Native Studio Voice (Zero Queue • Studio Quality)</label>
             <select id="neural-voice-select" class="input-select">
+              <optgroup label="English">
+                <option value="en-US-ChristopherNeural" selected>Christopher (US Male - Warm Studio)</option>
+                <option value="en-IN-PrabhatNeural">Prabhat (Indian English Male)</option>
+                <option value="en-IN-NeerjaNeural">Neerja (Indian English Female)</option>
+                <option value="en-US-JennyNeural">Jenny (US Female - Clear)</option>
+                <option value="en-GB-RyanNeural">Ryan (British Male - Articulate)</option>
+              </optgroup>
               <optgroup label="Telugu (తెలుగు)">
-                <option value="te-IN-MohanNeural" selected>Mohan (Telugu Male - Natural & Deep)</option>
+                <option value="te-IN-MohanNeural">Mohan (Telugu Male - Natural & Deep)</option>
                 <option value="te-IN-ShrutiNeural">Shruti (Telugu Female - Expressive)</option>
               </optgroup>
               <optgroup label="Hindi (हिंदी)">
                 <option value="hi-IN-MadhurNeural">Madhur (Hindi Male - Fluent & Natural)</option>
                 <option value="hi-IN-SwaraNeural">Swara (Hindi Female - Expressive)</option>
-              </optgroup>
-              <optgroup label="Indian English">
-                <option value="en-IN-PrabhatNeural">Prabhat (Indian English Male)</option>
-                <option value="en-IN-NeerjaNeural">Neerja (Indian English Female)</option>
-              </optgroup>
-              <optgroup label="Global English">
-                <option value="en-US-ChristopherNeural">Christopher (US Male - Warm Studio)</option>
-                <option value="en-US-JennyNeural">Jenny (US Female - Clear)</option>
-                <option value="en-GB-RyanNeural">Ryan (British Male - Articulate)</option>
               </optgroup>
             </select>
           </div>
@@ -200,9 +204,9 @@
         <!-- Language Quick Preset Chips -->
         <div class="chip-container">
           <span class="chip-label">Quick Presets:</span>
+          <button class="chip" onclick="applyPreset('reading')">Reading Books (Paragraph)</button>
           <button class="chip" onclick="applyPreset('telugu_story')">తెలుగు పేరా (Paragraph)</button>
           <button class="chip" onclick="applyPreset('hindi_story')">हिंदी पैराग्राफ (Paragraph)</button>
-          <button class="chip" onclick="applyPreset('english_story')">English Paragraph</button>
         </div>
 
         <!-- Script Area: Multi-Paragraphs supported -->
@@ -275,6 +279,9 @@
             <button class="btn btn-outline" onclick="copyShareLink()">
               Copy Audio URL
             </button>
+            <button class="btn btn-danger-outline" onclick="deleteActiveOutput()">
+              🗑️ Delete Output
+            </button>
           </div>
         </div>
       </section>
@@ -284,7 +291,10 @@
     <section class="panel history-panel">
       <div class="panel-header">
         <h2>Production Library (Generated Audio Clips)</h2>
-        <button class="btn btn-sm btn-ghost" onclick="loadHistory()">Refresh Library</button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-sm btn-ghost" onclick="loadHistory()">Refresh Library</button>
+          <button class="btn btn-sm btn-danger-ghost" onclick="clearAllHistory()">Clear Library</button>
+        </div>
       </div>
       <div id="history-list" class="history-grid">
         <p class="empty-state">No voice clips generated yet. Create your first master voiceover above!</p>
