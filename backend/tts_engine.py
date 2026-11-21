@@ -97,14 +97,27 @@ class TTSEngine:
             def _run():
                 try:
                     return client.predict(
-                        ref_audio=audio_handle,
-                        ref_text=ref_text or "",
-                        gen_text=target_text,
+                        ref_audio_input=audio_handle,
+                        ref_text_input=ref_text or "",
+                        gen_text_input=target_text,
                         remove_silence=remove_silence,
-                        api_name="/predict"
+                        randomize_seed=True,
+                        seed_input=0,
+                        cross_fade_duration_slider=0.15,
+                        nfe_slider=32,
+                        speed_slider=1.0,
+                        api_name="/basic_tts"
                     )
                 except Exception:
                     try:
+                        return client.predict(
+                            ref_audio=audio_handle,
+                            ref_text=ref_text or "",
+                            gen_text=target_text,
+                            remove_silence=remove_silence,
+                            api_name="/predict"
+                        )
+                    except Exception:
                         return client.predict(
                             ref_audio_orig=audio_handle,
                             ref_text=ref_text or "",
@@ -114,15 +127,8 @@ class TTSEngine:
                             cross_fade_duration=0.15,
                             api_name="/infer"
                         )
-                    except Exception:
-                        return client.predict(
-                            audio_handle,
-                            ref_text or "",
-                            target_text,
-                            remove_silence
-                        )
 
-            res = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=30.0)
+            res = await asyncio.wait_for(loop.run_in_executor(None, _run), timeout=90.0)
             out_file = res[0] if isinstance(res, (list, tuple)) else res
             if out_file and os.path.exists(str(out_file)):
                 return True, str(out_file)
