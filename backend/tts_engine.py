@@ -83,6 +83,7 @@ class TTSEngine:
         ref_audio_path: Path,
         ref_text: str,
         target_text: str,
+        speed: float = 1.0,
         remove_silence: bool = False
     ) -> Tuple[bool, Optional[str]]:
         """Calls user's dedicated Cloud GPU (Google Colab / RunPod / custom Gradio endpoint)."""
@@ -105,7 +106,7 @@ class TTSEngine:
                         seed_input=0,
                         cross_fade_duration_slider=0.15,
                         nfe_slider=32,
-                        speed_slider=1.0,
+                        speed_slider=speed,
                         api_name="/basic_tts"
                     )
                 except Exception:
@@ -205,12 +206,13 @@ class TTSEngine:
         reference_audio_path: Path,
         reference_text: str,
         target_text: str,
+        speed: float = 1.0,
         remove_silence: bool = False,
         style: str = "natural"
     ) -> Tuple[bool, str, Optional[str]]:
         """
         Clones voice with multi-sentence chunking for full paragraphs.
-        Produces pristine studio output with no phase vocoder distortion.
+        Produces pristine studio output with customizable pacing and breathing.
         """
         try:
             # 1. Slice reference audio to optimal 8.5s + auto-transcribe slice if empty
@@ -222,12 +224,12 @@ class TTSEngine:
             if not chunks:
                 return False, "Target script is empty.", None
 
-            # 3. Inter-sentence breathing pause
-            pause_ms = 240
+            # 3. Inter-sentence breathing pause (350ms standard human speech cadence)
+            pause_ms = 350
             if style == "aggressive":
-                pause_ms = 150
+                pause_ms = 200
             elif style == "calm":
-                pause_ms = 350
+                pause_ms = 480
 
             chunk_audio_arrays = []
             target_sr = 24000
@@ -245,6 +247,7 @@ class TTSEngine:
                         ref_audio_path=optimal_ref,
                         ref_text=effective_ref_text,
                         target_text=chunk,
+                        speed=speed,
                         remove_silence=remove_silence
                     )
                     active_engine = "Dedicated NVIDIA Cloud GPU (Colab)"

@@ -240,6 +240,7 @@ async def generate_speech(req: GenerateRequest):
             reference_audio_path=sample_path,
             reference_text=req.sample_transcript or "",
             target_text=req.script_text,
+            speed=req.speed,
             remove_silence=req.remove_silence,
             style=req.style
         )
